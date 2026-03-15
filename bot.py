@@ -610,37 +610,37 @@ class DatabaseManager:
 
 # ==================== إدارة المستخدمين المتقدمة ====================
 class UserManager:
-    """مدير المستخدمين المتقدم"""
+    """Advanced user manager with caching"""
     
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.cache = {}
-        self.cache_ttl = 300  # 5 دقائق
+        self.cache_ttl = 300  # 5 minutes
     
     async def get_user(self, user_id: int) -> Dict:
-        """الحصول على بيانات المستخدم مع كاش"""
+        """Get user data with cache"""
         user_id = str(user_id)
         
-        # التحقق من الكاش
+        # Check cache
         if user_id in self.cache:
             cache_time, data = self.cache[user_id]
             if time.time() - cache_time < self.cache_ttl:
                 return data
         
-        # الحصول من قاعدة البيانات
+        # Get from database
         user_data = self.db.get(USERS_FILE, user_id, {})
         
-        إذا لم يكن المستخدم موجوداً، أنشئ حساب جديد
+        # Create new user if not exists
         if not user_data:
             user_data = await self.create_user(user_id)
         
-        # تحديث الكاش
+        # Update cache
         self.cache[user_id] = (time.time(), user_data)
         
         return user_data
     
     async def create_user(self, user_id: str, username: str = None, first_name: str = None) -> Dict:
-        """إنشاء مستخدم جديد"""
+        """Create new user"""
         user_data = {
             'user_id': user_id,
             'username': username,
@@ -700,29 +700,29 @@ class UserManager:
         return user_data
     
     def generate_referral_code(self) -> str:
-        """توليد كود إحالة فريد"""
+        """Generate unique referral code"""
         return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     
     async def update_user(self, user_id: int, updates: Dict):
-        """تحديث بيانات المستخدم"""
+        """Update user data"""
         user_id = str(user_id)
         await self.db.update(USERS_FILE, user_id, updates)
         
-        # تحديث الكاش
+        # Update cache
         if user_id in self.cache:
             cache_time, data = self.cache[user_id]
             data.update(updates)
             self.cache[user_id] = (time.time(), data)
     
     async def update_stats(self, stat_name: str, value: int = 1):
-        """تحديث الإحصائيات العامة"""
+        """Update global statistics"""
         stats = self.db.get(STATS_FILE, 'global', {})
         stats[stat_name] = stats.get(stat_name, 0) + value
         stats['last_updated'] = datetime.now().isoformat()
         await self.db.set(STATS_FILE, 'global', stats)
     
     async def add_to_history(self, user_id: int, video_info: Dict):
-        """إضافة فيديو للسجل"""
+        """Add video to history"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
@@ -739,20 +739,20 @@ class UserManager:
             'thumbnail': video_info.get('thumbnail', '')
         })
         
-        # الاحتفاظ بآخر 100 عنصر
+        # Keep last 100 items
         if len(history) > MAX_HISTORY_ITEMS:
             history = history[-MAX_HISTORY_ITEMS:]
         
         await self.update_user(user_id, {'history': history})
     
     async def add_to_favorites(self, user_id: int, video_info: Dict):
-        """إضافة فيديو للمفضلة"""
+        """Add video to favorites"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
         favorites = user_data.get('favorites', [])
         
-        # التحقق من عدم التكرار
+        # Check for duplicates
         url = video_info.get('webpage_url', '')
         if not any(f.get('url') == url for f in favorites):
             favorites.append({
@@ -764,7 +764,7 @@ class UserManager:
                 'thumbnail': video_info.get('thumbnail', '')
             })
             
-            # تحديث الإحصائيات
+            # Update stats
             user_data['stats']['favorites_added'] += 1
             
             await self.update_user(user_id, {
@@ -775,7 +775,7 @@ class UserManager:
         return False
     
     async def remove_from_favorites(self, user_id: int, url: str):
-        """إزالة فيديو من المفضلة"""
+        """Remove video from favorites"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
@@ -785,13 +785,13 @@ class UserManager:
         await self.update_user(user_id, {'favorites': favorites})
     
     async def add_to_watch_later(self, user_id: int, video_info: Dict):
-        """إضافة فيديو للمشاهدة لاحقاً"""
+        """Add video to watch later"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
         watch_later = user_data.get('watch_later', [])
         
-        # التحقق من عدم التكرار
+        # Check for duplicates
         url = video_info.get('webpage_url', '')
         if not any(w.get('url') == url for w in watch_later):
             watch_later.append({
@@ -808,14 +808,14 @@ class UserManager:
         return False
     
     async def check_daily_limit(self, user_id: int, file_size: int) -> Tuple[bool, str]:
-        """التحقق من الحدود اليومية"""
+        """Check daily download limits"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
         today = datetime.now().strftime('%Y-%m-%d')
         limits = user_data.get('daily_limits', {})
         
-        # إعادة تعيين إذا كان يوم جديد
+        # Reset if new day
         if limits.get('date') != today:
             limits = {
                 'date': today,
@@ -823,25 +823,25 @@ class UserManager:
                 'size': 0
             }
         
-        # حدود المستخدمين العاديين
+        # Regular user limits
         MAX_DAILY_DOWNLOADS = 50
         MAX_DAILY_SIZE = 5 * 1024 * 1024 * 1024  # 5 GB
         
-        # حدود المستخدمين المميزين
+        # Premium user limits
         if user_data.get('is_premium'):
             MAX_DAILY_DOWNLOADS = 200
             MAX_DAILY_SIZE = 20 * 1024 * 1024 * 1024  # 20 GB
         
         if limits['downloads'] >= MAX_DAILY_DOWNLOADS:
-            return False, "❌ لقد تجاوزت الحد اليومي للتحميلات"
+            return False, "❌ You have exceeded the daily download limit"
         
         if limits['size'] + file_size > MAX_DAILY_SIZE:
-            return False, "❌ لقد تجاوزت الحد اليومي للحجم"
+            return False, "❌ You have exceeded the daily size limit"
         
         return True, "ok"
     
     async def increment_daily_usage(self, user_id: int, file_size: int):
-        """زيادة الاستخدام اليومي"""
+        """Increment daily usage counters"""
         user_id = str(user_id)
         user_data = await self.get_user(user_id)
         
@@ -859,7 +859,6 @@ class UserManager:
             limits['size'] += file_size
         
         await self.update_user(user_id, {'daily_limits': limits})
-
 # ==================== إدارة الإحصائيات ====================
 class StatsManager:
     """مدير الإحصائيات المتقدم"""
