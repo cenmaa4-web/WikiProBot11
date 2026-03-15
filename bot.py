@@ -797,7 +797,7 @@ class AdvancedVideoBot:
                     parse_mode='Markdown'
                 )
     
-        async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, quality: str, fmt: str = 'mp4'):
+    async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, quality: str, fmt: str = 'mp4'):
         """تحميل الفيديو"""
         query = update.callback_query
         url = context.user_data.get('url')
@@ -843,8 +843,8 @@ class AdvancedVideoBot:
             
             # التحميل
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file = ydl.prepare_filename(info)
+                downloaded_info = ydl.extract_info(url, download=True)
+                file = ydl.prepare_filename(downloaded_info)
                 
                 # تعديل اسم الملف للصيغ المختلفة
                 if fmt == 'mp3':
@@ -863,8 +863,8 @@ class AdvancedVideoBot:
                     # تحديث إحصائيات المستخدم
                     user_id = update.effective_user.id
                     video_info = {
-                        'title': info.get('title', 'فيديو'),
-                        'extractor': info.get('extractor', 'Unknown'),
+                        'title': downloaded_info.get('title', 'فيديو'),
+                        'extractor': downloaded_info.get('extractor', 'Unknown'),
                         'quality': quality,
                         'filesize': size
                     }
@@ -875,11 +875,11 @@ class AdvancedVideoBot:
                         caption = f"""
 ✅ *تم التحميل بنجاح!*
 
-📹 *العنوان:* {info.get('title', 'فيديو')[:100]}
+📹 *العنوان:* {downloaded_info.get('title', 'فيديو')[:100]}
 ⚡ *الجودة:* {QUALITIES.get(quality, quality)}
 📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
 📦 *الحجم:* {self.format_size(size)}
-⏱ *المدة:* {self.format_time(info.get('duration', 0))}
+⏱ *المدة:* {self.format_time(downloaded_info.get('duration', 0))}
 
 شكراً لاستخدامك البوت ❤️
                         """
@@ -890,9 +890,9 @@ class AdvancedVideoBot:
                                 audio=video_file,
                                 caption=caption,
                                 parse_mode='Markdown',
-                                title=info.get('title', 'صوت'),
-                                performer=info.get('uploader', 'غير معروف'),
-                                duration=info.get('duration', 0)
+                                title=downloaded_info.get('title', 'صوت'),
+                                performer=downloaded_info.get('uploader', 'غير معروف'),
+                                duration=downloaded_info.get('duration', 0)
                             )
                         else:
                             await context.bot.send_video(
@@ -901,9 +901,9 @@ class AdvancedVideoBot:
                                 caption=caption,
                                 parse_mode='Markdown',
                                 supports_streaming=True,
-                                duration=info.get('duration', 0),
-                                width=info.get('width', 0),
-                                height=info.get('height', 0)
+                                duration=downloaded_info.get('duration', 0),
+                                width=downloaded_info.get('width', 0),
+                                height=downloaded_info.get('height', 0)
                             )
                     
                     # حذف الملف بعد الإرسال
