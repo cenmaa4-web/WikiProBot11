@@ -1,9 +1,6 @@
 python-telegram-bot==20.3
 yt-dlp
-aiohttp==3.8.6
-aiofiles
 requests
 python-dotenv
-cryptography
 psutil
 pytz
