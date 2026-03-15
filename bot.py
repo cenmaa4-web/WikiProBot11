@@ -797,7 +797,7 @@ class AdvancedVideoBot:
                     parse_mode='Markdown'
                 )
     
-    async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, quality: str, fmt: str = 'mp4'):
+        async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, quality: str, fmt: str = 'mp4'):
         """تحميل الفيديو"""
         query = update.callback_query
         url = context.user_data.get('url')
@@ -870,28 +870,109 @@ class AdvancedVideoBot:
                     }
                     self.user_manager.update_stats(user_id, video_info)
                     
-                   # إرسال الملف حسب نوعه
-with open(file, 'rb') as video_file:
-    caption = f"""
+                    # إرسال الملف حسب نوعه
+                    with open(file, 'rb') as video_file:
+                        caption = f"""
 ✅ *تم التحميل بنجاح!*
 
 📹 *العنوان:* {info.get('title', 'فيديو')[:100]}
 ⚡ *الجودة:* {QUALITIES.get(quality, quality)}
 📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
 📦 *الحجم:* {self.format_size(size)}
-"""
+⏱ *المدة:* {self.format_time(info.get('duration', 0))}
 
-    if fmt == 'mp3':
-        await context.bot.send_audio(
-            chat_id=update.effective_user.id,
-            audio=video_file,
-            caption=caption,
-            parse_mode='Markdown'
-        )
-    else:
-        await context.bot.send_video(
-            chat_id=update.effective_user.id,
-            video=video_file,
-            caption=caption,
-            parse_mode='Markdown'
-        )
+شكراً لاستخدامك البوت ❤️
+                        """
+                        
+                        if fmt == 'mp3':
+                            await context.bot.send_audio(
+                                chat_id=update.effective_user.id,
+                                audio=video_file,
+                                caption=caption,
+                                parse_mode='Markdown',
+                                title=info.get('title', 'صوت'),
+                                performer=info.get('uploader', 'غير معروف'),
+                                duration=info.get('duration', 0)
+                            )
+                        else:
+                            await context.bot.send_video(
+                                chat_id=update.effective_user.id,
+                                video=video_file,
+                                caption=caption,
+                                parse_mode='Markdown',
+                                supports_streaming=True,
+                                duration=info.get('duration', 0),
+                                width=info.get('width', 0),
+                                height=info.get('height', 0)
+                            )
+                    
+                    # حذف الملف بعد الإرسال
+                    os.remove(file)
+                    
+                    # حذف رسالة التحميل
+                    await progress_msg.delete()
+                    
+                else:
+                    await progress_msg.edit_text("❌ فشل في العثور على الملف المحمل")
+                    
+        except Exception as e:
+            await progress_msg.edit_text(f"❌ خطأ في التحميل: {str(e)[:200]}")
+            logger.error(f"Download error: {e}")
+    
+    # ========== تشغيل البوت ==========
+    def run(self):
+        """تشغيل البوت"""
+        try:
+            # إنشاء التطبيق
+            app = Application.builder().token(BOT_TOKEN).build()
+            
+            # إضافة معالجات الأوامر
+            app.add_handler(CommandHandler("start", self.start))
+            app.add_handler(CommandHandler("help", self.help_command))
+            app.add_handler(CommandHandler("settings", self.settings_command))
+            app.add_handler(CommandHandler("stats", self.stats_command))
+            app.add_handler(CommandHandler("history", self.history_command))
+            app.add_handler(CommandHandler("about", self.about_command))
+            
+            # إضافة معالج الرسائل النصية
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+            
+            # إضافة معالج الأزرار
+            app.add_handler(CallbackQueryHandler(self.handle_callback))
+            
+            # معالج الأخطاء
+            app.add_error_handler(self.error_handler)
+            
+            # تشغيل البوت
+            print("=" * 50)
+            print("🚀 بوت تحميل الفيديوهات الاحترافي")
+            print("=" * 50)
+            print(f"✅ البوت يعمل بنجاح!")
+            print(f"👥 عدد المستخدمين المسجلين: {len(self.user_manager.users)}")
+            print(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
+            print(f"⚡ جاهز لاستقبال الروابط والبحث...")
+            print("=" * 50)
+            
+            app.run_polling(allowed_updates=Update.ALL_TYPES)
+            
+        except Exception as e:
+            print(f"❌ خطأ في تشغيل البوت: {e}")
+            logger.error(f"Bot startup error: {e}")
+    
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """معالج الأخطاء"""
+        logger.error(f"حدث خطأ: {context.error}")
+        
+        try:
+            if update and update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ عذراً، حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى لاحقاً."
+                )
+        except:
+            pass
+
+# ==================== تشغيل البوت ====================
+if __name__ == "__main__":
+    # إنشاء وتشغيل البوت
+    bot = AdvancedVideoBot()
+    bot.run()
