@@ -166,6 +166,24 @@ class UserManager:
             if len(self.users[user_id]['favorites']) > 20:
                 self.users[user_id]['favorites'] = self.users[user_id]['favorites'][-20:]
             self.save_users()
+    
+    def add_to_watch_history(self, user_id: int, video_info: Dict):
+        """إضافة فيديو لسجل المشاهدة"""
+        user_id = str(user_id)
+        if user_id in self.users:
+            if 'watch_history' not in self.users[user_id]:
+                self.users[user_id]['watch_history'] = []
+            
+            self.users[user_id]['watch_history'].append({
+                'date': datetime.now().isoformat(),
+                'title': video_info.get('title', 'Unknown'),
+                'url': video_info.get('webpage_url', ''),
+                'duration': video_info.get('duration', 0)
+            })
+            # Keep last 50 watches
+            if len(self.users[user_id]['watch_history']) > 50:
+                self.users[user_id]['watch_history'] = self.users[user_id]['watch_history'][-50:]
+            self.save_users()
 
 # ==================== البوت الرئيسي ====================
 class AdvancedVideoBot:
@@ -287,7 +305,7 @@ class AdvancedVideoBot:
 /download - تحميل فيديو
 /favorites - المفضلة
 /watchlater - المشاهدة لاحقاً
-/history - سجل المشاهدة
+/history - سجل النشاط
 /settings - الإعدادات
 /stats - إحصائياتك
 /help - المساعدة
@@ -465,6 +483,9 @@ class AdvancedVideoBot:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video['url'], download=False)
                 
+                # إضافة لسجل المشاهدة
+                self.user_manager.add_to_watch_history(user_id, info)
+                
                 text = f"""
 🎬 *{self.clean_text_for_telegram(info.get('title', 'فيديو'))}*
 
@@ -614,7 +635,7 @@ class AdvancedVideoBot:
                 keyboard.append(quality_row2)
                 
                 quality_row3 = []
-                for q_id, q_name in list(QUALITIES.items())[6:]:
+                for q_id, q_name in list(QUALITIES.items())[6:9]:
                     quality_row3.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
@@ -636,10 +657,12 @@ class AdvancedVideoBot:
     async def show_favorites(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عرض المفضلة"""
         user_id = str(update.effective_user.id)
-        favorites = self.user_manager.users.get(user_id, {}).get('favorites', [])
+        user_data = self.user_manager.users.get(user_id, {})
+        favorites = user_data.get('favorites', [])
         
         if not favorites:
             text = "⭐ *المفضلة*\n\nلا توجد فيديوهات في المفضلة بعد"
+            keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]]
         else:
             text = "⭐ *المفضلة*\n\n"
             keyboard = []
@@ -655,27 +678,29 @@ class AdvancedVideoBot:
                 )])
             
             keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")])
-            
-            if update.callback_query:
-                await update.callback_query.edit_message_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
     
     async def show_watchlater(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عرض قائمة المشاهدة لاحقاً"""
         user_id = str(update.effective_user.id)
-        watch_later = self.user_manager.users.get(user_id, {}).get('watch_later', [])
+        user_data = self.user_manager.users.get(user_id, {})
+        watch_later = user_data.get('watch_later', [])
         
         if not watch_later:
             text = "⏰ *للمشاهدة لاحقاً*\n\nلا توجد فيديوهات في القائمة"
+            keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]]
         else:
             text = "⏰ *للمشاهدة لاحقاً*\n\n"
             keyboard = []
@@ -691,19 +716,19 @@ class AdvancedVideoBot:
                 )])
             
             keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")])
-            
-            if update.callback_query:
-                await update.callback_query.edit_message_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(
-                    text,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """أمر المساعدة"""
@@ -734,14 +759,12 @@ class AdvancedVideoBot:
 • /search + كلمة البحث
 • أو اكتب أي كلمة للبحث
 
-⚙️ *الإعدادات:*
-• /settings لتخصيص البوت
-• اختر الجودة الافتراضية
-• ضبط الإشعارات
-
 📊 *الإحصائيات:*
 • /stats لعرض إحصائياتك
-• /history لعرض سجل المشاهدة
+• /history لعرض سجل النشاط
+
+⚙️ *الإعدادات:*
+• /settings لتخصيص البوت
 
 ⚠️ *القيود:*
 • الحد الأقصى: 50 ميجابايت
@@ -863,6 +886,44 @@ class AdvancedVideoBot:
                 parse_mode='Markdown'
             )
     
+    async def history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """عرض سجل المشاهدة والتحميلات"""
+        user_id = str(update.effective_user.id)
+        user_data = self.user_manager.users.get(user_id, {})
+        
+        # سجل التحميلات
+        download_history = user_data.get('download_history', [])[-10:]
+        # سجل المشاهدة
+        watch_history = user_data.get('watch_history', [])[-10:]
+        
+        if not download_history and not watch_history:
+            await update.message.reply_text("📭 لا يوجد سجل بعد")
+            return
+        
+        text = "📜 *سجل نشاطك*\n\n"
+        
+        if download_history:
+            text += "📥 *آخر التحميلات:*\n"
+            for i, item in enumerate(reversed(download_history), 1):
+                date = item.get('date', '')[:10]
+                title = item.get('title', 'فيديو')[:40]
+                platform = item.get('platform', 'غير معروف')
+                text += f"{i}. {title}\n   📅 {date} | {platform}\n\n"
+        
+        if watch_history:
+            text += "👁 *آخر المشاهدات:*\n"
+            for i, item in enumerate(reversed(watch_history), 1):
+                date = item.get('date', '')[:10]
+                title = item.get('title', 'فيديو')[:40]
+                text += f"{i}. {title}\n   📅 {date}\n\n"
+        
+        keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]]
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+    
     async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عن البوت"""
         about_text = f"""
@@ -910,6 +971,7 @@ class AdvancedVideoBot:
                 parse_mode='Markdown'
             )
     
+    # ========== معالج الرسائل ==========
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """معالجة الرسائل"""
         text = update.message.text
@@ -984,7 +1046,7 @@ class AdvancedVideoBot:
                 
                 keyboard = [
                     [InlineKeyboardButton("🎬 مشاهدة مباشرة", callback_data=f"watch_now_{url}")],
-                    [InlineKeyboardButton("📥 تحميل", callback_data=f"download_menu_{url}")],
+                    [InlineKeyboardButton("📥 تحميل", callback_data=f"download_now_{url}")],
                     [InlineKeyboardButton("⭐ إضافة للمفضلة", callback_data=f"add_favorite_{url}")],
                     [InlineKeyboardButton("⏰ مشاهدة لاحقاً", callback_data=f"add_watchlater_{url}")],
                     [InlineKeyboardButton("ℹ️ معلومات إضافية", callback_data="more_info")],
@@ -1118,7 +1180,8 @@ class AdvancedVideoBot:
             parts = data.replace("browse_page_", "").split("_")
             category = parts[0]
             page = int(parts[1])
-            self.browse_sessions[user_id]['current_page'] = page
+            if user_id in self.browse_sessions:
+                self.browse_sessions[user_id]['current_page'] = page
             await self.show_video_page(update, context, category, page)
         
         elif data.startswith("view_video_"):
@@ -1130,9 +1193,15 @@ class AdvancedVideoBot:
         # ========== نتائج البحث ==========
         elif data.startswith("search_result_"):
             idx = int(data.replace("search_result_", ""))
-            video = self.browse_sessions.get(user_id, {}).get('search_results', [])[idx]
-            if video:
-                await self.view_video(update, context, "search_results", idx)
+            videos = self.browse_sessions.get(user_id, {}).get('search_results', [])
+            if idx < len(videos):
+                video = videos[idx]
+                # إنشاء category مؤقتة للبحث
+                if 'search_results' not in self.browse_sessions.get(user_id, {}):
+                    if user_id not in self.browse_sessions:
+                        self.browse_sessions[user_id] = {}
+                    self.browse_sessions[user_id]['search_results'] = [video]
+                await self.view_video(update, context, 'search_results', idx)
         
         # ========== المشاهدة والتحميل ==========
         elif data.startswith("watch_now_"):
@@ -1167,11 +1236,13 @@ class AdvancedVideoBot:
         
         elif data.startswith("fav_video_"):
             url = data.replace("fav_video_", "")
-            await self.view_video(update, context, "favorites", 0)
+            # إعادة استخدام view_video مع category خاصة
+            context.user_data['temp_url'] = url
+            await self.download_now(update, context, url)
         
         elif data.startswith("watch_video_"):
             url = data.replace("watch_video_", "")
-            await self.view_video(update, context, "watchlater", 0)
+            await self.watch_now(update, context, url)
         
         # ========== قوائم المستخدم ==========
         elif data == "show_favorites":
@@ -1362,7 +1433,7 @@ class AdvancedVideoBot:
                 
                 keyboard = [
                     [InlineKeyboardButton("🎬 مشاهدة", callback_data=f"watch_now_{context.user_data.get('url')}")],
-                    [InlineKeyboardButton("📥 تحميل", callback_data=f"download_menu_{context.user_data.get('url')}")],
+                    [InlineKeyboardButton("📥 تحميل", callback_data=f"download_now_{context.user_data.get('url')}")],
                     [InlineKeyboardButton("ℹ️ معلومات إضافية", callback_data="more_info")],
                     [InlineKeyboardButton("❌ إلغاء", callback_data="cancel")]
                 ]
@@ -1575,6 +1646,7 @@ class AdvancedVideoBot:
             print("   • بحث متقدم")
             print("   • إحصائيات شخصية")
             print("   • إعدادات مخصصة")
+            print("   • سجل النشاط")
             print("=" * 60)
             
             app.run_polling(allowed_updates=Update.ALL_TYPES)
