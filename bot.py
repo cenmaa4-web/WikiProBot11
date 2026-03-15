@@ -49,8 +49,6 @@ QUALITIES = {
     '480': '480p (جيدة)',
     '720': '720p (عالية)',
     '1080': '1080p (فائقة)',
-    '2k': '2K (عالية جداً)',
-    '4k': '4K (فائقة الدقة)',
     'best': 'أفضل جودة متاحة'
 }
 
@@ -60,12 +58,6 @@ FORMATS = {
     'webm': 'WEBM',
     'mkv': 'MKV',
     'mp3': 'MP3 (صوت فقط)'
-}
-
-# اللغات
-LANGUAGES = {
-    'ar': 'العربية',
-    'en': 'English'
 }
 
 # ==================== إدارة المستخدمين ====================
@@ -92,7 +84,6 @@ class UserManager:
                 'joined_date': datetime.now().isoformat(),
                 'downloads_count': 0,
                 'total_downloads': 0,
-                'language': 'ar',
                 'settings': {
                     'default_quality': 'best',
                     'auto_delete': True,
@@ -189,12 +180,11 @@ class AdvancedVideoBot:
 
 ✨ *المميزات المتطورة:*
 • تحميل من جميع المنصات (يوتيوب، تيك توك، انستغرام، فيسبوك، تويتر)
-• اختيار جودة التحميل (144p - 4K)
+• اختيار جودة التحميل (144p - 1080p)
 • اختيار صيغة الفيديو (MP4, WEBM, MKV, MP3)
 • بحث متقدم عن الفيديوهات
 • إحصائيات شخصية للمستخدم
 • إعدادات مخصصة لكل مستخدم
-• دعم اللغات (العربية - الإنجليزية قريباً)
 • تحميل قوائم التشغيل كاملة
 • معاينة الفيديو قبل التحميل
 
@@ -217,8 +207,7 @@ class AdvancedVideoBot:
              InlineKeyboardButton("⚙️ الإعدادات", callback_data="settings")],
             [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats"),
              InlineKeyboardButton("❓ المساعدة", callback_data="help")],
-            [InlineKeyboardButton("🎯 قناتي على يوتيوب", url="https://youtube.com"),
-             InlineKeyboardButton("📢 قناة البوت", url="https://t.me/your_channel")]
+            [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]
         ]
         
         await update.message.reply_text(
@@ -227,7 +216,7 @@ class AdvancedVideoBot:
             parse_mode='Markdown'
         )
     
-    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """أمر المساعدة"""
         help_text = """
 ❓ *دليل استخدام البوت*
@@ -248,13 +237,11 @@ class AdvancedVideoBot:
 • الجودة الافتراضية
 • صيغة التحميل المفضلة
 • الحذف التلقائي
-• اللغة
 
 🎯 *الميزات الخاصة:*
 • تحميل قوائم التشغيل كاملة
 • تحميل الصوت فقط (MP3)
 • معاينة الفيديو
-• استئناف التحميل المتقطع
 
 📊 *الإحصائيات:*
 • عدد التحميلات
@@ -275,7 +262,7 @@ class AdvancedVideoBot:
             parse_mode='Markdown'
         )
     
-    async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """أمر الإعدادات"""
         user_id = str(update.effective_user.id)
         user_settings = self.user_manager.users.get(user_id, {}).get('settings', {})
@@ -287,7 +274,6 @@ class AdvancedVideoBot:
 • الجودة الافتراضية: {QUALITIES.get(user_settings.get('default_quality', 'best'), 'أفضل جودة')}
 • الحذف التلقائي: {'✅' if user_settings.get('auto_delete', True) else '❌'}
 • الإشعارات: {'✅' if user_settings.get('notifications', True) else '❌'}
-• اللغة: العربية
 
 اختر الإعداد الذي تريد تعديله:
         """
@@ -296,7 +282,6 @@ class AdvancedVideoBot:
             [InlineKeyboardButton("🎬 الجودة الافتراضية", callback_data="set_default_quality")],
             [InlineKeyboardButton("🗑 الحذف التلقائي", callback_data="toggle_auto_delete")],
             [InlineKeyboardButton("🔔 الإشعارات", callback_data="toggle_notifications")],
-            [InlineKeyboardButton("🌐 تغيير اللغة", callback_data="change_language")],
             [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]
         ]
@@ -308,7 +293,7 @@ class AdvancedVideoBot:
         )
         return SETTINGS_MENU
     
-    async def stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عرض الإحصائيات"""
         user_id = str(update.effective_user.id)
         user_data = self.user_manager.users.get(user_id, {})
@@ -357,7 +342,7 @@ class AdvancedVideoBot:
                 parse_mode='Markdown'
             )
     
-    async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def history_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عرض سجل التحميلات"""
         user_id = str(update.effective_user.id)
         user_data = self.user_manager.users.get(user_id, {})
@@ -385,9 +370,9 @@ class AdvancedVideoBot:
             parse_mode='Markdown'
         )
     
-    async def about(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """عن البوت"""
-        about_text = """
+        about_text = f"""
 ℹ️ *عن البوت*
 
 🤖 *الاسم:* بوت تحميل الفيديوهات المتطور
@@ -397,22 +382,17 @@ class AdvancedVideoBot:
 
 ✨ *المميزات:*
 • تحميل من 20+ منصة
-• جودات متعددة حتى 4K
+• جودات متعددة حتى 1080p
 • صيغ متعددة (MP4, MP3, MKV)
 • بحث متقدم
 • إحصائيات شخصية
 • إعدادات مخصصة
-• دعم اللغات
 
 ⚡ *الإحصائيات العامة:*
 • عدد المستخدمين: {len(self.user_manager.users)}
 • إجمالي التحميلات: {sum(u.get('total_downloads', 0) for u in self.user_manager.users.values())}
 
 📊 *حالة البوت:* 🟢 نشط
-
-🔰 *قنوات التواصل:*
-• قناة التحديثات: @YourChannel
-• الدعم الفني: @YourSupport
 
 شكراً لاستخدامك البوت! ❤️
         """
@@ -462,7 +442,6 @@ class AdvancedVideoBot:
                 duration = info.get('duration', 0)
                 platform = info.get('extractor', 'غير معروفة')
                 views = info.get('view_count', 0)
-                likes = info.get('like_count', 0)
                 uploader = info.get('uploader', 'غير معروف')
                 
                 # التحقق من القيود
@@ -481,43 +460,36 @@ class AdvancedVideoBot:
 📊 *المنصة:* {platform}
 👤 *الرافع:* {uploader}
 👁 *المشاهدات:* {views:,}
-❤️ *الإعجابات:* {likes:,}
 
 👇 *اختر خيارات التحميل:*
                 """
                 
-                # أزرار الجودة والصيغة
+                # أزرار الجودة
                 keyboard = []
                 
-                # أزرار الجودة
-                quality_row = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[:3]):
-                    quality_row.append(InlineKeyboardButton(
+                # صف الجودات الأول
+                quality_row1 = []
+                for q_id, q_name in list(QUALITIES.items())[:3]:
+                    quality_row1.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
-                keyboard.append(quality_row)
+                keyboard.append(quality_row1)
                 
+                # صف الجودات الثاني
                 quality_row2 = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[3:6]):
+                for q_id, q_name in list(QUALITIES.items())[3:6]:
                     quality_row2.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
                 keyboard.append(quality_row2)
                 
+                # صف الجودات الثالث
                 quality_row3 = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[6:9]):
+                for q_id, q_name in list(QUALITIES.items())[6:]:
                     quality_row3.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
                 keyboard.append(quality_row3)
-                
-                # أزرار الصيغ
-                format_row = []
-                for fmt_id, fmt_name in FORMATS.items():
-                    format_row.append(InlineKeyboardButton(
-                        f"📁 {fmt_name}", callback_data=f"format_{fmt_id}"
-                    ))
-                keyboard.append(format_row)
                 
                 # أزرار إضافية
                 keyboard.append([
@@ -540,14 +512,7 @@ class AdvancedVideoBot:
         msg = await update.message.reply_text(f"🔍 *جاري البحث عن:* '{query}'...", parse_mode='Markdown')
         
         try:
-            # البحث في منصات متعددة
-            platforms_to_search = [
-                f"ytsearch5:{query}",  # يوتيوب
-                # يمكن إضافة المزيد من المنصات هنا
-            ]
-            
-            all_results = []
-            
+            # البحث في يوتيوب
             ydl_opts = {
                 'quiet': True,
                 'extract_flat': True,
@@ -555,39 +520,33 @@ class AdvancedVideoBot:
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                for search_query in platforms_to_search:
-                    try:
-                        results = ydl.extract_info(search_query, download=False)
-                        if results and 'entries' in results:
-                            all_results.extend(results['entries'])
-                    except:
-                        continue
-            
-            if all_results:
-                keyboard = []
-                for i, video in enumerate(all_results[:8], 1):
-                    if video:
-                        title = video.get('title', 'بدون عنوان')[:45]
-                        duration = self.format_time(video.get('duration', 0))
-                        channel = video.get('uploader', 'غير معروف')[:15]
-                        
-                        btn_text = f"{i}. {title} - {channel} ({duration})"
-                        url = f"https://youtube.com/watch?v={video.get('id', '')}"
-                        
-                        keyboard.append([InlineKeyboardButton(
-                            btn_text, callback_data=f"url_{url}"
-                        )])
+                results = ydl.extract_info(f"ytsearch8:{query}", download=False)
                 
-                keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="cancel")])
-                
-                await msg.edit_text(
-                    f"🔍 *نتائج البحث عن:* '{query}'\n\nاختر الفيديو المطلوب:",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='Markdown'
-                )
-            else:
-                await msg.edit_text("❌ لم يتم العثور على نتائج")
-                
+                if results and 'entries' in results:
+                    keyboard = []
+                    for i, video in enumerate(results['entries'][:8], 1):
+                        if video:
+                            title = video.get('title', 'بدون عنوان')[:45]
+                            duration = self.format_time(video.get('duration', 0))
+                            channel = video.get('uploader', 'غير معروف')[:15]
+                            
+                            btn_text = f"{i}. {title} - {channel} ({duration})"
+                            url = f"https://youtube.com/watch?v={video.get('id', '')}"
+                            
+                            keyboard.append([InlineKeyboardButton(
+                                btn_text, callback_data=f"url_{url}"
+                            )])
+                    
+                    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="cancel")])
+                    
+                    await msg.edit_text(
+                        f"🔍 *نتائج البحث عن:* '{query}'\n\nاختر الفيديو المطلوب:",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await msg.edit_text("❌ لم يتم العثور على نتائج")
+                    
         except Exception as e:
             await msg.edit_text(f"❌ خطأ في البحث: {str(e)[:200]}")
     
@@ -606,7 +565,7 @@ class AdvancedVideoBot:
         
         elif data == "back_to_settings":
             await query.message.delete()
-            await self.settings(update, context)
+            await self.settings_command(update, context)
             return
         
         elif data == "platforms":
@@ -624,7 +583,6 @@ class AdvancedVideoBot:
 🎮 *تويش* - Twitch
 🎵 *ساوند كلاود* - SoundCloud
 📺 *ديلي موشن* - Dailymotion
-🎬 *فيسبوك ووتش* - Facebook Watch
 
 ✨ *قريباً:* المزيد من المنصات!
 
@@ -639,13 +597,13 @@ class AdvancedVideoBot:
             )
         
         elif data == "help":
-            await self.help(update, context)
+            await self.help_command(update, context)
         
         elif data == "settings":
-            await self.settings(update, context)
+            await self.settings_command(update, context)
         
         elif data == "stats":
-            await self.stats(update, context)
+            await self.stats_command(update, context)
         
         elif data == "cancel":
             await query.edit_message_text("✅ *تم الإلغاء بنجاح*", parse_mode='Markdown')
@@ -713,36 +671,6 @@ class AdvancedVideoBot:
                     ]])
                 )
         
-        elif data == "change_language":
-            keyboard = [
-                [InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")],
-                [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")],
-                [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_settings")]
-            ]
-            
-            await query.edit_message_text(
-                "🌐 *اختر اللغة المناسبة:*",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-        
-        elif data.startswith("lang_"):
-            lang = data.replace("lang_", "")
-            user_id = str(update.effective_user.id)
-            
-            if user_id in self.user_manager.users:
-                self.user_manager.users[user_id]['language'] = lang
-                self.user_manager.save_users()
-            
-            lang_name = "العربية" if lang == 'ar' else "English"
-            await query.edit_message_text(
-                f"✅ *تم تغيير اللغة إلى:* {lang_name}",
-                parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data="back_to_settings")
-                ]])
-            )
-        
         # معالجة التحميل
         elif data.startswith("url_"):
             url = data.replace("url_", "")
@@ -786,11 +714,9 @@ class AdvancedVideoBot:
 🎵 *الصوت متوفر:* {'✅' if info.get('acodec') != 'none' else '❌'}
 🖼 *الدقة المتوفرة:* {info.get('resolution', 'غير معروف')}
 ⚡ *معدل الإطارات:* {info.get('fps', 'غير معروف')} fps
-🔊 *معدل الصوت:* {info.get('abr', 'غير معروف')} kbps
 
 📊 *إحصائيات متقدمة:*
 • 👍 الإعجابات: {info.get('like_count', 0):,}
-• 👎 عدم الإعجاب: {info.get('dislike_count', 0):,}
 • 👁 المشاهدات: {info.get('view_count', 0):,}
 • 💬 التعليقات: {info.get('comment_count', 0):,}
 
@@ -821,22 +747,26 @@ class AdvancedVideoBot:
                 """
                 
                 keyboard = []
-                quality_row = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[:3]):
-                    quality_row.append(InlineKeyboardButton(
+                
+                # صف الجودات الأول
+                quality_row1 = []
+                for q_id, q_name in list(QUALITIES.items())[:3]:
+                    quality_row1.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
-                keyboard.append(quality_row)
+                keyboard.append(quality_row1)
                 
+                # صف الجودات الثاني
                 quality_row2 = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[3:6]):
+                for q_id, q_name in list(QUALITIES.items())[3:6]:
                     quality_row2.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
                 keyboard.append(quality_row2)
                 
+                # صف الجودات الثالث
                 quality_row3 = []
-                for i, (q_id, q_name) in enumerate(list(QUALITIES.items())[6:9]):
+                for q_id, q_name in list(QUALITIES.items())[6:]:
                     quality_row3.append(InlineKeyboardButton(
                         f"🎬 {q_name}", callback_data=f"quality_{q_id}"
                     ))
@@ -872,3 +802,74 @@ class AdvancedVideoBot:
             f"📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}\n\n"
             f"⏳ يرجى الانتظار...",
             parse_mode='Markdown'
+        )
+        
+        try:
+            # إعدادات التحميل
+            if quality == 'best':
+                format_spec = 'best[ext=mp4]/best'
+            elif fmt == 'mp3':
+                format_spec = 'bestaudio/best'
+            else:
+                format_spec = f'best[height<={quality}][ext={fmt}]/best[height<={quality}]/best'
+            
+            filename = f"{DOWNLOAD_FOLDER}/video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.%(ext)s"
+            
+            ydl_opts = {
+                'format': format_spec,
+                'outtmpl': filename,
+                'quiet': True,
+                'no_warnings': True,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }] if fmt == 'mp3' else [],
+            }
+            
+            # التحميل
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file = ydl.prepare_filename(info)
+                
+                # تعديل اسم الملف للصيغ المختلفة
+                if fmt == 'mp3':
+                    file = file.replace('.webm', '.mp3').replace('.m4a', '.mp3')
+                else:
+                    # تغيير الامتداد إذا كان مختلفاً
+                    for ext in ['.mp4', '.webm', '.mkv']:
+                        test_file = file.replace('%(ext)s', ext).replace('.*', ext)
+                        if os.path.exists(test_file):
+                            file = test_file
+                            break
+                
+                if os.path.exists(file):
+                    size = os.path.getsize(file)
+                    
+                    # تحديث إحصائيات المستخدم
+                    user_id = update.effective_user.id
+                    video_info = {
+                        'title': info.get('title', 'فيديو'),
+                        'extractor': info.get('extractor', 'Unknown'),
+                        'quality': quality,
+                        'filesize': size
+                    }
+                    self.user_manager.update_stats(user_id, video_info)
+                    
+                    # إرسال الفيديو
+                    with open(file, 'rb') as video_file:
+                        caption = f"""
+✅ *تم التحميل بنجاح!*
+
+📹 *العنوان:* {info.get('title', 'فيديو')[:100]}
+⚡ *الجودة:* {QUALITIES.get(quality, quality)}
+📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
+📦 *الحجم:* {self.format_size(size)}
+⏱ *المدة:* {self.format_time(info.get('duration', 0))}
+
+شكراً لاستخدامك البوت ❤️
+                        """
+                        
+                        if fmt == 'mp3':
+                            await context.bot.send_audio(
+                               
