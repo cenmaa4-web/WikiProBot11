@@ -870,8 +870,8 @@ class AdvancedVideoBot:
                     }
                     self.user_manager.update_stats(user_id, video_info)
                     
-                    # إرسال الملف حسب نوعه
-                    with open(file, 'rb') as video_file:
+                   # إرسال الملف حسب نوعه
+with open(file, 'rb') as video_file:
     caption = f"""
 ✅ *تم التحميل بنجاح!*
 
@@ -879,7 +879,7 @@ class AdvancedVideoBot:
 ⚡ *الجودة:* {QUALITIES.get(quality, quality)}
 📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
 📦 *الحجم:* {self.format_size(size)}
-    """
+"""
 
     if fmt == 'mp3':
         await context.bot.send_audio(
