@@ -1,5 +1,15 @@
+# المكتبات الأساسية المطلوبة للكود الطويل
 python-telegram-bot==20.7
 yt-dlp==2024.3.10
 aiohttp==3.9.1
 aiofiles==23.2.1
 Pillow==10.2.0
+requests==2.31.0
+
+# إضافات مفيدة (اختيارية)
+redis==5.0.1
+sqlalchemy==2.0.27
+psutil==5.9.8
+cryptography==42.0.5
+python-dotenv==1.0.1
+pytz==2024.1
