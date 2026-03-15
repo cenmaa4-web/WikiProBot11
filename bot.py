@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Telegram Video Downloader Bot - الإصدار النهائي المضمون
-Version: 1.0.0
+Telegram Video Downloader Bot - الإصدار النهائي والمضمون
+Version: 2.0.0
 """
 
 import os
@@ -11,8 +11,6 @@ import sys
 import json
 import logging
 import asyncio
-import aiohttp
-import aiofiles
 import subprocess
 import re
 import time
@@ -39,9 +37,9 @@ from telegram.constants import ParseMode
 
 # ==================== الإعدادات الأساسية ====================
 BOT_TOKEN = "7536390168:AAHZNO7XjIRBpwhMf3O5RojM9f2RrPYzUZ4"  # ضع التوكن هنا
-BOT_VERSION = "1.0.0"
+BOT_VERSION = "2.0.0"
 
-# إنشاء المجلدات
+# إنشاء مجلد التحميلات
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
@@ -65,8 +63,8 @@ VIDEO_QUALITIES = {
 
 # ==================== صيغ التحميل ====================
 DOWNLOAD_FORMATS = {
-    'mp4': {'name': 'MP4', 'emoji': '🎬'},
-    'mp3': {'name': 'MP3 (صوت)', 'emoji': '🎵'}
+    'mp4': {'name': 'MP4 فيديو', 'emoji': '🎬'},
+    'mp3': {'name': 'MP3 صوت', 'emoji': '🎵'}
 }
 
 # ==================== فئات التصفح ====================
@@ -82,139 +80,13 @@ VIDEO_CATEGORIES = {
 # ==================== المنصات المدعومة ====================
 SUPPORTED_PLATFORMS = {
     'youtube': {'name': 'يوتيوب', 'emoji': '📺'},
+    'youtu.be': {'name': 'يوتيوب', 'emoji': '📺'},
     'instagram': {'name': 'انستغرام', 'emoji': '📷'},
     'facebook': {'name': 'فيسبوك', 'emoji': '📘'},
     'twitter': {'name': 'تويتر', 'emoji': '🐦'},
+    'x.com': {'name': 'تويتر', 'emoji': '🐦'},
     'tiktok': {'name': 'تيك توك', 'emoji': '🎵'}
 }
-
-# ==================== معالج الفيديو ====================
-class VideoProcessor:
-    """معالج الفيديو - يعمل مع yt-dlp"""
-    
-    def __init__(self):
-        self.ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'ignoreerrors': True,
-        }
-    
-    async def get_video_info(self, url: str) -> Optional[Dict]:
-        """الحصول على معلومات الفيديو"""
-        try:
-            loop = asyncio.get_event_loop()
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                info = await loop.run_in_executor(
-                    None,
-                    lambda: ydl.extract_info(url, download=False)
-                )
-                
-                return {
-                    'title': info.get('title', 'Unknown'),
-                    'duration': info.get('duration', 0),
-                    'uploader': info.get('uploader', 'Unknown'),
-                    'view_count': info.get('view_count', 0),
-                    'like_count': info.get('like_count', 0),
-                    'thumbnail': info.get('thumbnail', ''),
-                    'webpage_url': info.get('webpage_url', url),
-                    'extractor': info.get('extractor', 'unknown')
-                }
-        except Exception as e:
-            logger.error(f"خطأ في الحصول على معلومات الفيديو: {e}")
-            return None
-    
-    async def search_videos(self, query: str, limit: int = 5) -> List[Dict]:
-        """البحث عن فيديوهات"""
-        try:
-            loop = asyncio.get_event_loop()
-            with yt_dlp.YoutubeDL({**self.ydl_opts, 'extract_flat': True}) as ydl:
-                results = await loop.run_in_executor(
-                    None,
-                    lambda: ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
-                )
-                
-                videos = []
-                if results and 'entries' in results:
-                    for entry in results['entries']:
-                        if entry:
-                            videos.append({
-                                'id': entry.get('id', ''),
-                                'title': entry.get('title', ''),
-                                'url': f"https://youtube.com/watch?v={entry.get('id', '')}",
-                                'duration': entry.get('duration', 0),
-                                'thumbnail': f"https://img.youtube.com/vi/{entry.get('id', '')}/hqdefault.jpg",
-                                'channel': entry.get('uploader', '')
-                            })
-                return videos
-        except Exception as e:
-            logger.error(f"خطأ في البحث: {e}")
-            return []
-    
-    async def download_video(self, url: str, quality: str = 'best', format: str = 'mp4') -> Optional[Dict]:
-        """تحميل الفيديو"""
-        try:
-            # إعدادات التحميل
-            if quality == 'best':
-                format_spec = 'best[ext=mp4]/best'
-            elif quality.isdigit():
-                format_spec = f'best[height<={quality}][ext=mp4]/best'
-            else:
-                format_spec = 'best[ext=mp4]/best'
-            
-            if format == 'mp3':
-                format_spec = 'bestaudio/best'
-            
-            # اسم الملف
-            filename = DOWNLOAD_DIR / f"video_{int(time.time())}_{random.randint(1000,9999)}.%(ext)s"
-            
-            ydl_opts = {
-                **self.ydl_opts,
-                'format': format_spec,
-                'outtmpl': str(filename),
-            }
-            
-            # إضافة معالج الصوت
-            if format == 'mp3':
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
-            
-            # التحميل
-            loop = asyncio.get_event_loop()
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = await loop.run_in_executor(
-                    None,
-                    lambda: ydl.extract_info(url, download=True)
-                )
-                
-                # الحصول على اسم الملف الفعلي
-                file = ydl.prepare_filename(info)
-                if format == 'mp3':
-                    file = str(file).replace('.webm', '.mp3').replace('.m4a', '.mp3').replace('.mp4', '.mp3')
-                else:
-                    for ext in ['.mp4', '.webm']:
-                        test_file = str(file).replace('%(ext)s', ext)
-                        if Path(test_file).exists():
-                            file = test_file
-                            break
-                
-                if Path(file).exists():
-                    size = Path(file).stat().st_size
-                    return {
-                        'success': True,
-                        'file': file,
-                        'size': size,
-                        'title': info.get('title', ''),
-                        'duration': info.get('duration', 0)
-                    }
-                
-                return {'success': False, 'error': 'الملف غير موجود'}
-                
-        except Exception as e:
-            logger.error(f"خطأ في التحميل: {e}")
-            return {'success': False, 'error': str(e)}
 
 # ==================== دوال المساعدة ====================
 def format_time(seconds: int) -> str:
@@ -251,6 +123,156 @@ def get_platform_emoji(url: str) -> str:
             return info['emoji']
     return '🌐'
 
+def get_platform_name(url: str) -> str:
+    """الحصول على اسم المنصة"""
+    url_lower = url.lower()
+    for platform, info in SUPPORTED_PLATFORMS.items():
+        if platform in url_lower:
+            return info['name']
+    return 'أخرى'
+
+# ==================== معالج الفيديو ====================
+class VideoProcessor:
+    """معالج الفيديو - يعمل مع yt-dlp"""
+    
+    def __init__(self):
+        self.ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+        }
+    
+    async def get_video_info(self, url: str) -> Optional[Dict]:
+        """الحصول على معلومات الفيديو"""
+        try:
+            loop = asyncio.get_event_loop()
+            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+                info = await loop.run_in_executor(
+                    None,
+                    lambda: ydl.extract_info(url, download=False)
+                )
+                
+                if not info:
+                    return None
+                
+                return {
+                    'title': info.get('title', 'بدون عنوان'),
+                    'duration': info.get('duration', 0),
+                    'uploader': info.get('uploader', 'غير معروف'),
+                    'view_count': info.get('view_count', 0),
+                    'like_count': info.get('like_count', 0),
+                    'thumbnail': info.get('thumbnail', ''),
+                    'webpage_url': info.get('webpage_url', url),
+                    'extractor': info.get('extractor', 'unknown')
+                }
+        except Exception as e:
+            logger.error(f"خطأ في الحصول على معلومات الفيديو: {e}")
+            return None
+    
+    async def search_videos(self, query: str, limit: int = 5) -> List[Dict]:
+        """البحث عن فيديوهات"""
+        try:
+            loop = asyncio.get_event_loop()
+            search_opts = {**self.ydl_opts, 'extract_flat': True}
+            
+            with yt_dlp.YoutubeDL(search_opts) as ydl:
+                results = await loop.run_in_executor(
+                    None,
+                    lambda: ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+                )
+                
+                videos = []
+                if results and 'entries' in results:
+                    for entry in results['entries']:
+                        if entry and entry.get('id'):
+                            video_id = entry.get('id', '')
+                            videos.append({
+                                'id': video_id,
+                                'title': entry.get('title', 'بدون عنوان'),
+                                'url': f"https://youtube.com/watch?v={video_id}",
+                                'duration': entry.get('duration', 0),
+                                'thumbnail': f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                                'channel': entry.get('uploader', 'غير معروف')
+                            })
+                return videos
+        except Exception as e:
+            logger.error(f"خطأ في البحث: {e}")
+            return []
+    
+    async def download_video(self, url: str, quality: str = 'best', format: str = 'mp4') -> Optional[Dict]:
+        """تحميل الفيديو"""
+        try:
+            # إعدادات التحميل حسب الجودة
+            if quality == 'best':
+                if format == 'mp3':
+                    format_spec = 'bestaudio/best'
+                else:
+                    format_spec = 'best[ext=mp4]/best'
+            elif quality.isdigit():
+                if format == 'mp3':
+                    format_spec = 'bestaudio/best'
+                else:
+                    format_spec = f'best[height<={quality}][ext=mp4]/best'
+            else:
+                format_spec = 'best[ext=mp4]/best'
+            
+            # اسم الملف
+            timestamp = int(time.time())
+            random_id = random.randint(1000, 9999)
+            filename = DOWNLOAD_DIR / f"video_{timestamp}_{random_id}.%(ext)s"
+            
+            ydl_opts = {
+                **self.ydl_opts,
+                'format': format_spec,
+                'outtmpl': str(filename),
+            }
+            
+            # إضافة معالج الصوت لـ MP3
+            if format == 'mp3':
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            
+            # التحميل
+            loop = asyncio.get_event_loop()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = await loop.run_in_executor(
+                    None,
+                    lambda: ydl.extract_info(url, download=True)
+                )
+                
+                # الحصول على اسم الملف الفعلي
+                file = ydl.prepare_filename(info)
+                
+                if format == 'mp3':
+                    # تغيير الامتداد لـ MP3
+                    file = str(file).replace('.webm', '.mp3').replace('.m4a', '.mp3').replace('.mp4', '.mp3')
+                else:
+                    # البحث عن الملف بامتدادات مختلفة
+                    for ext in ['.mp4', '.webm', '.mkv']:
+                        test_file = str(file).replace('%(ext)s', ext)
+                        if Path(test_file).exists():
+                            file = test_file
+                            break
+                
+                if Path(file).exists():
+                    size = Path(file).stat().st_size
+                    return {
+                        'success': True,
+                        'file': file,
+                        'size': size,
+                        'title': info.get('title', 'فيديو'),
+                        'duration': info.get('duration', 0)
+                    }
+                
+                return {'success': False, 'error': 'الملف غير موجود'}
+                
+        except Exception as e:
+            logger.error(f"خطأ في التحميل: {e}")
+            return {'success': False, 'error': str(e)}
+
 # ==================== بوت التليجرام ====================
 class VideoBot:
     """البوت الرئيسي"""
@@ -259,36 +281,43 @@ class VideoBot:
         self.processor = VideoProcessor()
         self.user_sessions = {}
         self.start_time = datetime.now()
+        self.users_count = 0
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """أمر البدء"""
         user = update.effective_user
+        self.users_count += 1
         
-        text = f"""
+        welcome_text = f"""
 🎬 *مرحباً {user.first_name}!*
 
-أنا بوت تحميل الفيديوهات. أرسل لي رابط فيديو أو كلمة للبحث!
+أنا بوت تحميل الفيديوهات من جميع المنصات 🚀
 
-📥 *للتحميل:* أرسل رابط الفيديو
-🔍 *للبحث:* اكتب أي كلمة
-🔥 *للتصفح:* استخدم الأزرار أدناه
+📥 *أرسل لي رابط فيديو وسأقوم بتحميله لك*
+🔍 *أو اكتب كلمة للبحث عن فيديوهات*
 
-الأوامر:
-/start - القائمة الرئيسية
-/browse - تصفح الفيديوهات
-/help - المساعدة
+✨ *المميزات:*
+• تحميل من يوتيوب، انستغرام، فيسبوك، تيك توك، تويتر
+• اختيار الجودة (144p - 1080p)
+• تحميل فيديو أو صوت MP3
+• بحث سريع عن الفيديوهات
+• تصفح الفئات المختلفة
+• واجهة عربية سهلة
 
-👥 عدد المستخدمين: {len(self.user_sessions)}
-⚡ الإصدار: {BOT_VERSION}
+👥 *المستخدمين:* {self.users_count}
+⚡ *الإصدار:* {BOT_VERSION}
+
+👇 *اختر ما تريد:*
         """
         
         keyboard = [
             [InlineKeyboardButton("🔥 تصفح", callback_data="browse")],
-            [InlineKeyboardButton("❓ مساعدة", callback_data="help")]
+            [InlineKeyboardButton("🔍 بحث", callback_data="search"),
+             InlineKeyboardButton("❓ مساعدة", callback_data="help")]
         ]
         
         await update.message.reply_text(
-            text,
+            welcome_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -305,7 +334,7 @@ class VideoBot:
                 callback_data=f"cat_{cat_id}"
             )])
         
-        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")])
         
         await query.edit_message_text(
             "🔥 *اختر الفئة:*",
@@ -318,7 +347,10 @@ class VideoBot:
         query = update.callback_query
         user_id = update.effective_user.id
         
-        await query.edit_message_text(f"🔍 جاري البحث في {VIDEO_CATEGORIES[category]['name']}...")
+        await query.edit_message_text(
+            f"⏳ جاري البحث في {VIDEO_CATEGORIES[category]['name']}...",
+            parse_mode=ParseMode.MARKDOWN
+        )
         
         videos = await self.processor.search_videos(
             VIDEO_CATEGORIES[category]['query'],
@@ -327,7 +359,7 @@ class VideoBot:
         
         if not videos:
             await query.edit_message_text(
-                "❌ لا توجد فيديوهات",
+                "❌ لا توجد فيديوهات في هذه الفئة",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 رجوع", callback_data="browse")
                 ]]),
@@ -351,11 +383,13 @@ class VideoBot:
         query = update.callback_query
         user_id = update.effective_user.id
         
+        duration = format_time(video.get('duration', 0))
+        
         text = f"""
 🎬 *{video['title'][:100]}*
 
-📺 القناة: {video.get('channel', 'غير معروف')}
-⏱ المدة: {format_time(video.get('duration', 0))}
+📺 *القناة:* {video.get('channel', 'غير معروف')}
+⏱ *المدة:* {duration}
 
 🔗 [شاهد على يوتيوب]({video['url']})
         """
@@ -370,6 +404,7 @@ class VideoBot:
         # أزرار التنقل
         videos = self.user_sessions.get(user_id, {}).get('browse', {}).get('videos', [])
         nav_buttons = []
+        
         if index > 0:
             nav_buttons.append(InlineKeyboardButton("◀️ السابق", callback_data="nav_prev"))
         if index < len(videos) - 1:
@@ -377,6 +412,10 @@ class VideoBot:
         
         if nav_buttons:
             keyboard.append(nav_buttons)
+            keyboard.append([InlineKeyboardButton(
+                f"📄 الصفحة {index + 1}/{len(videos)}", 
+                callback_data="page_info"
+            )])
         
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="browse")])
         
@@ -398,8 +437,9 @@ class VideoBot:
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode=ParseMode.MARKDOWN
                 )
-        except:
-            # إذا فشل إرسال الصورة
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الصورة: {e}")
+            # إذا فشل إرسال الصورة، أرسل نص فقط
             if query:
                 await query.edit_message_text(
                     text,
@@ -417,7 +457,7 @@ class VideoBot:
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """معالجة الرسائل"""
-        text = update.message.text
+        text = update.message.text.strip()
         
         # التحقق من الرابط
         if re.match(r'https?://\S+', text):
@@ -430,11 +470,13 @@ class VideoBot:
         msg = await update.message.reply_text("⏳ جاري معالجة الرابط...")
         
         platform_emoji = get_platform_emoji(url)
+        platform_name = get_platform_name(url)
+        
         info = await self.processor.get_video_info(url)
         
         if not info:
             await msg.edit_text(
-                f"{platform_emoji} ❌ تعذر الحصول على معلومات الفيديو",
+                f"{platform_emoji} ❌ تعذر الحصول على معلومات الفيديو من {platform_name}",
                 parse_mode=ParseMode.MARKDOWN
             )
             return
@@ -442,14 +484,18 @@ class VideoBot:
         user_id = update.effective_user.id
         self.user_sessions[user_id] = {'current_video': info}
         
+        duration = format_time(info['duration'])
+        views = format_number(info['view_count'])
+        likes = format_number(info['like_count'])
+        
         text = f"""
-{platform_emoji} *معلومات الفيديو*
+{platform_emoji} *معلومات الفيديو من {platform_name}*
 
 🎬 *العنوان:* {info['title'][:100]}
-👤 الرافع: {info['uploader']}
-⏱ المدة: {format_time(info['duration'])}
-👁 المشاهدات: {format_number(info['view_count'])}
-👍 الإعجابات: {format_number(info['like_count'])}
+👤 *الرافع:* {info['uploader']}
+⏱ *المدة:* {duration}
+👁 *المشاهدات:* {views}
+👍 *الإعجابات:* {likes}
 
 🔗 [شاهد على يوتيوب]({info['webpage_url']})
         """
@@ -459,9 +505,10 @@ class VideoBot:
                 InlineKeyboardButton("▶️ مشاهدة", url=info['webpage_url']),
                 InlineKeyboardButton("📥 تحميل", callback_data="download_menu")
             ],
-            [InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")]
+            [InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")]
         ]
         
+        # إرسال الصورة المصغرة
         try:
             await msg.delete()
             await update.message.reply_photo(
@@ -470,7 +517,8 @@ class VideoBot:
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.MARKDOWN
             )
-        except:
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الصورة: {e}")
             await msg.edit_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
@@ -486,9 +534,9 @@ class VideoBot:
         
         if not videos:
             await msg.edit_text(
-                f"❌ لا توجد نتائج للبحث: '{query}'",
+                f"❌ لا توجد نتائج للبحث عن: '{query}'",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
                 ]]),
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -505,21 +553,23 @@ class VideoBot:
         query = update.callback_query
         user_id = update.effective_user.id
         
+        duration = format_time(video.get('duration', 0))
+        
         text = f"""
-🔍 *نتيجة {index + 1}*
+🔍 *نتيجة البحث {index + 1}*
 
 🎬 *{video['title'][:100]}*
 
-📺 القناة: {video.get('channel', 'غير معروف')}
-⏱ المدة: {format_time(video.get('duration', 0))}
+📺 *القناة:* {video.get('channel', 'غير معروف')}
+⏱ *المدة:* {duration}
 
 🔗 [شاهد على يوتيوب]({video['url']})
         """
         
-        # أزرار التنقل
         videos = self.user_sessions.get(user_id, {}).get('search_results', [])
         keyboard = []
         
+        # أزرار التنقل
         nav_buttons = []
         if index > 0:
             nav_buttons.append(InlineKeyboardButton("◀️ السابق", callback_data="search_prev"))
@@ -533,6 +583,8 @@ class VideoBot:
             InlineKeyboardButton("▶️ مشاهدة", url=video['url']),
             InlineKeyboardButton("📥 تحميل", callback_data=f"dl_{video['url']}")
         ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 بحث جديد", callback_data="search")])
         
         # إرسال الصورة
         try:
@@ -552,7 +604,8 @@ class VideoBot:
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode=ParseMode.MARKDOWN
                 )
-        except:
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الصورة: {e}")
             if query:
                 await query.edit_message_text(
                     text,
@@ -576,7 +629,13 @@ class VideoBot:
         video = self.user_sessions.get(update.effective_user.id, {}).get('current_video', {})
         
         if not video:
-            await query.edit_message_text("❌ لا توجد معلومات فيديو")
+            await query.edit_message_text(
+                "❌ لا توجد معلومات فيديو. أرسل رابط فيديو أولاً.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
+                ]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
             return
         
         keyboard = []
@@ -589,7 +648,7 @@ class VideoBot:
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")])
         
         await query.edit_message_text(
-            "📥 *اختر الجودة:*",
+            "📥 *اختر جودة التحميل:*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -609,7 +668,7 @@ class VideoBot:
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="download_menu")])
         
         await query.edit_message_text(
-            f"📥 *اختر الصيغة:*\n\nالجودة: {VIDEO_QUALITIES[quality]['name']}",
+            f"📥 *اختر الصيغة:*\n\nالجودة: {VIDEO_QUALITIES[quality]['emoji']} {VIDEO_QUALITIES[quality]['name']}",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -621,38 +680,62 @@ class VideoBot:
         
         video = self.user_sessions.get(user_id, {}).get('current_video', {})
         url = video.get('webpage_url', '')
+        title = video.get('title', 'فيديو')
         
         if not url:
-            await query.edit_message_text("❌ لا يوجد رابط فيديو")
+            await query.edit_message_text(
+                "❌ لا يوجد رابط فيديو",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
+                ]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
             return
         
-        await query.edit_message_text("⬇️ جاري التحميل... الرجاء الانتظار")
+        await query.edit_message_text(
+            f"⬇️ *جاري التحميل...*\n\n"
+            f"🎬 {title[:50]}\n"
+            f"⚡ {VIDEO_QUALITIES[quality]['name']} | {DOWNLOAD_FORMATS[format]['name']}\n\n"
+            f"⏳ الرجاء الانتظار...",
+            parse_mode=ParseMode.MARKDOWN
+        )
         
         result = await self.processor.download_video(url, quality, format)
         
         if result['success']:
-            with open(result['file'], 'rb') as f:
+            file = result['file']
+            size = result['size']
+            
+            with open(file, 'rb') as f:
                 if format == 'mp3':
                     await context.bot.send_audio(
                         chat_id=user_id,
                         audio=f,
-                        caption="✅ تم التحميل بنجاح!",
-                        title=result['title'][:100],
-                        duration=result['duration']
+                        caption=f"✅ تم التحميل بنجاح!\n📦 الحجم: {format_size(size)}",
+                        title=title[:100],
+                        duration=result['duration'],
+                        performer=video.get('uploader', '')
                     )
                 else:
                     await context.bot.send_video(
                         chat_id=user_id,
                         video=f,
-                        caption="✅ تم التحميل بنجاح!",
-                        supports_streaming=True
+                        caption=f"✅ تم التحميل بنجاح!\n📦 الحجم: {format_size(size)}",
+                        supports_streaming=True,
+                        duration=result['duration']
                     )
             
-            # حذف الملف
-            Path(result['file']).unlink()
+            # حذف الملف بعد الإرسال
+            Path(file).unlink()
             await query.delete()
         else:
-            await query.edit_message_text(f"❌ فشل التحميل: {result.get('error', 'خطأ غير معروف')}")
+            await query.edit_message_text(
+                f"❌ فشل التحميل: {result.get('error', 'خطأ غير معروف')}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
+                ]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
     
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """معالجة الأزرار"""
@@ -660,6 +743,7 @@ class VideoBot:
         data = query.data
         user_id = update.effective_user.id
         
+        # أزرار القائمة الرئيسية
         if data == "main_menu":
             await query.message.delete()
             await self.start(update, context)
@@ -667,32 +751,57 @@ class VideoBot:
         elif data == "browse":
             await self.browse(update, context)
         
+        elif data == "search":
+            await query.edit_message_text(
+                "🔍 *بحث*\n\nأرسل كلمة البحث الآن:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
+                ]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        
         elif data == "help":
-            text = """
+            help_text = """
 ❓ *المساعدة*
 
-📥 *للتحميل:* أرسل رابط الفيديو
-🔍 *للبحث:* اكتب أي كلمة
-🔥 *للتصفح:* استخدم قائمة التصفح
+📥 *لتحميل فيديو:*
+• أرسل رابط الفيديو مباشرة
+• اختر الجودة المناسبة
+• اختر الصيغة (فيديو أو صوت)
+• انتظر التحميل
 
-المنصات المدعومة:
-• يوتيوب
-• انستغرام
-• فيسبوك
-• تيك توك
-• تويتر
+🔍 *للبحث عن فيديوهات:*
+• اكتب أي كلمة للبحث
+• تصفح النتائج مع الصور
+• اختر الفيديو المطلوب
+
+🔥 *للتصفح:*
+• استخدم قائمة التصفح
+• اختر الفئة المناسبة
+• تصفح الفيديوهات
+
+🌐 *المنصات المدعومة:*
+• يوتيوب 📺
+• انستغرام 📷
+• فيسبوك 📘
+• تويتر 🐦
+• تيك توك 🎵
 • والمزيد...
 
-⚠️ *ملاحظة:* بعض المنصات قد لا تعمل بسبب التحديثات
+⚡ *الأوامر المتاحة:*
+/start - القائمة الرئيسية
+/browse - تصفح الفيديوهات
+/help - هذه المساعدة
             """
             await query.edit_message_text(
-                text,
+                help_text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 رجوع", callback_data="main_menu")
+                    InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu")
                 ]])
             )
         
+        # أزرار التصفح
         elif data.startswith("cat_"):
             category = data.replace("cat_", "")
             await self.browse_category(update, context, category)
@@ -713,6 +822,7 @@ class VideoBot:
                 session['page'] = page + 1
                 await self.show_video(update, context, videos[page + 1], page + 1)
         
+        # أزرار البحث
         elif data == "search_prev":
             session = self.user_sessions.get(user_id, {})
             videos = session.get('search_results', [])
@@ -729,6 +839,7 @@ class VideoBot:
                 session['search_page'] = page + 1
                 await self.show_search_result(update, context, videos[page + 1], page + 1)
         
+        # أزرار التحميل
         elif data == "download_menu":
             await self.download_menu(update, context)
         
@@ -739,38 +850,48 @@ class VideoBot:
         elif data.startswith("format_"):
             parts = data.replace("format_", "").split("_")
             quality = parts[0]
-            format = parts[1]
-            await self.start_download(update, context, quality, format)
+            format_type = parts[1]
+            await self.start_download(update, context, quality, format_type)
         
         elif data.startswith("dl_"):
             url = data.replace("dl_", "")
+            # محاكاة إرسال رابط
             await self.handle_url(update, context, url)
+        
+        elif data == "page_info":
+            await query.answer("استخدم الأزرار للتنقل بين الفيديوهات")
+        
+        else:
+            await query.answer("إجراء غير معروف")
     
     def run(self):
         """تشغيل البوت"""
         try:
+            print("=" * 60)
+            print("🚀 بوت تحميل الفيديوهات - الإصدار النهائي")
+            print("=" * 60)
+            print(f"✅ التوكن: {BOT_TOKEN[:15]}...")
+            print(f"✅ Python: {sys.version}")
+            print("✅ المكتبات: python-telegram-bot, yt-dlp")
+            print("=" * 60)
+            print("📌 أرسل /start في تليجرام للبدء")
+            print("=" * 60)
+            
+            # إنشاء التطبيق
             app = Application.builder().token(BOT_TOKEN).build()
             
             # إضافة المعالجات
             app.add_handler(CommandHandler("start", self.start))
             app.add_handler(CommandHandler("browse", self.browse))
+            app.add_handler(CommandHandler("help", self.help))
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
             app.add_handler(CallbackQueryHandler(self.handle_callback))
             
-            # رسالة البدء
-            print("=" * 50)
-            print("🚀 بوت تحميل الفيديوهات - شغال!")
-            print("=" * 50)
-            print(f"✅ التوكن: {BOT_TOKEN[:10]}...")
-            print(f"✅ البوت يعمل على Python {sys.version}")
-            print("=" * 50)
-            print("📌 أرسل /start في تليجرام للبدء")
-            print("=" * 50)
-            
+            # تشغيل البوت
             app.run_polling()
             
         except Exception as e:
-            print(f"❌ خطأ: {e}")
+            print(f"❌ خطأ في تشغيل البوت: {e}")
             traceback.print_exc()
 
 # ==================== تشغيل البوت ====================
