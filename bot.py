@@ -18,7 +18,7 @@ from telegram.ext import (
 import yt_dlp
 
 # ==================== الإعدادات الأساسية ====================
-BOT_TOKEN = "7536390168:AAHZNO7XjIRBpwhMf3O5RojM9f2RrPYzUZ4"  # ضع التوكن هنا
+BOT_TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"  # ضع التوكن هنا
 DOWNLOAD_FOLDER = "downloads"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_DURATION = 600  # 10 دقائق
