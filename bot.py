@@ -872,10 +872,26 @@ class AdvancedVideoBot:
                     
                     # إرسال الملف حسب نوعه
                     with open(file, 'rb') as video_file:
-                        caption = f"""
+    caption = f"""
 ✅ *تم التحميل بنجاح!*
 
 📹 *العنوان:* {info.get('title', 'فيديو')[:100]}
 ⚡ *الجودة:* {QUALITIES.get(quality, quality)}
 📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
 📦 *الحجم:* {self.format_size(size)}
+    """
+
+    if fmt == 'mp3':
+        await context.bot.send_audio(
+            chat_id=update.effective_user.id,
+            audio=video_file,
+            caption=caption,
+            parse_mode='Markdown'
+        )
+    else:
+        await context.bot.send_video(
+            chat_id=update.effective_user.id,
+            video=video_file,
+            caption=caption,
+            parse_mode='Markdown'
+        )
