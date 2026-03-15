@@ -8,8 +8,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ==================== الإعدادات ====================
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # ضع التوكن هنا
-ADMIN_IDS = [123456789]
+BOT_TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"  # ضع التوكن هنا
+ADMIN_IDS = [7924248487]
 DB_NAME = 'bot_database.db'
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -33,10 +33,6 @@ class Database:
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
             task TEXT, status TEXT DEFAULT 'pending', date TEXT)''')
-        
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
-            url TEXT, code TEXT, clicks INTEGER DEFAULT 0, date TEXT)''')
         
         self.conn.commit()
     
@@ -63,11 +59,6 @@ class Database:
         self.cursor.execute("SELECT * FROM notes WHERE user_id=? ORDER BY date DESC", (user_id,))
         return self.cursor.fetchall()
     
-    def delete_note(self, note_id, user_id):
-        self.cursor.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, user_id))
-        self.conn.commit()
-        return self.cursor.rowcount > 0
-    
     def add_task(self, user_id, task):
         self.cursor.execute("INSERT INTO tasks (user_id, task, date) VALUES (?, ?, ?)",
                            (user_id, task, str(datetime.now())))
@@ -84,20 +75,17 @@ class Database:
                            (task_id, user_id))
         self.conn.commit()
         return self.cursor.rowcount > 0
-    
-    def save_link(self, user_id, url, code):
-        self.cursor.execute("INSERT INTO links (user_id, url, code, date) VALUES (?, ?, ?, ?)",
-                           (user_id, url, code, str(datetime.now())))
-        self.conn.commit()
 
 db = Database()
 
 # ==================== الدوال المساعدة ====================
-def get_weather(city):
-    try:
-        res = requests.get(f"https://wttr.in/{city}?format=%c+%t+%w+%h", timeout=5)
-        return res.text if res.status_code == 200 else "🌤 لا توجد معلومات"
-    except: return "🌤 لا توجد معلومات"
+def main_menu():
+    keyboard = [
+        [KeyboardButton("📝 ملاحظات"), KeyboardButton("✅ مهام")],
+        [KeyboardButton("🎲 ألعاب"), KeyboardButton("📊 نقاطي")],
+        [KeyboardButton("ℹ️ حقائق"), KeyboardButton("😄 نكت")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 def get_fact():
     facts = [
@@ -105,27 +93,16 @@ def get_fact():
         "🐙 الأخطبوط له 3 قلوب",
         "🦒 الزرافة تنظف أذنيها بلسانها",
         "🐬 الدلفين ينام وعين مفتوحة",
-        "🐘 الفيل لا يقفز",
-        "🐫 الجمل يصبر على الماء أسبوعين"
+        "🐘 الفيل لا يقفز"
     ]
     return random.choice(facts)
 
 def get_joke():
     jokes = [
         "😄 مرة واحد قال لصاحبه أنا بحبك أوي قال له بحبك أنت كمان قال له يبقى نروح نعمل بصلة؟",
-        "😄 مرة واحد سأل مراته إنتي بتحبيني؟ قالت له طبعاً قال لها طب ليه بتعملي الأكل وحش؟",
-        "😄 مرة واحد دخل محل قال عايز جزمه مقاس 45 قال له مافيش قال له طيب عايز 45 جزمه مقاس 40"
+        "😄 مرة واحد سأل مراته إنتي بتحبيني؟ قالت له طبعاً قال لها طب ليه بتعملي الأكل وحش؟"
     ]
     return random.choice(jokes)
-
-def main_menu():
-    keyboard = [
-        [KeyboardButton("📝 ملاحظات"), KeyboardButton("✅ مهام")],
-        [KeyboardButton("🔗 رابط"), KeyboardButton("🎲 ألعاب")],
-        [KeyboardButton("📊 نقاطي"), KeyboardButton("🌤 طقس")],
-        [KeyboardButton("ℹ️ حقائق"), KeyboardButton("😄 نكت")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # ==================== المتغيرات ====================
 user_state = {}
@@ -135,9 +112,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.add_user(user.id, user.username, user.first_name)
     await update.message.reply_text(
-        f"🎉 مرحباً {user.first_name}\n"
-        f"أهلاً بك في البوت\n"
-        f"استخدم الأزرار للتحكم",
+        f"🎉 مرحباً {user.first_name}\nأهلاً بك في البوت",
         reply_markup=main_menu()
     )
 
@@ -147,16 +122,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if text == "📝 ملاحظات":
         keyboard = [
-            [InlineKeyboardButton("➕ إضافة ملاحظة", callback_data="add_note")],
-            [InlineKeyboardButton("📋 عرض ملاحظاتي", callback_data="show_notes")],
+            [InlineKeyboardButton("➕ إضافة", callback_data="add_note")],
+            [InlineKeyboardButton("📋 عرض", callback_data="show_notes")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
         ]
         await update.message.reply_text("📝 اختر:", reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif text == "✅ مهام":
         keyboard = [
-            [InlineKeyboardButton("➕ إضافة مهمة", callback_data="add_task")],
-            [InlineKeyboardButton("📋 مهامي", callback_data="show_tasks")],
+            [InlineKeyboardButton("➕ إضافة", callback_data="add_task")],
+            [InlineKeyboardButton("📋 عرض", callback_data="show_tasks")],
             [InlineKeyboardButton("🔙 رجوع", callback_data="back")]
         ]
         await update.message.reply_text("✅ اختر:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -174,18 +149,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         points = user[3] if user else 0
         await update.message.reply_text(f"⭐ نقاطك: {points}")
     
-    elif text == "🌤 طقس":
-        await update.message.reply_text("🌤 اكتب اسم المدينة مع /weather\nمثال: /weather القاهرة")
-    
     elif text == "ℹ️ حقائق":
         await update.message.reply_text(get_fact())
+        db.add_points(user_id, 1)
     
     elif text == "😄 نكت":
         await update.message.reply_text(get_joke())
-    
-    elif text == "🔗 رابط":
-        user_state[user_id] = "waiting_link"
-        await update.message.reply_text("🔗 أرسل الرابط الذي تريد تقصيره:")
+        db.add_points(user_id, 1)
     
     elif user_id in user_state:
         if user_state[user_id] == "waiting_note_title":
@@ -196,24 +166,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif user_state[user_id] == "waiting_note_content":
             note_id = db.add_note(user_id, context.user_data.get('note_title', 'ملاحظة'), text)
             db.add_points(user_id, 5)
-            await update.message.reply_text(f"✅ تم حفظ الملاحظة (رقم {note_id})\n+5 نقاط")
+            await update.message.reply_text(f"✅ تم الحفظ (رقم {note_id})\n+5 نقاط")
             del user_state[user_id]
         
         elif user_state[user_id] == "waiting_task":
             task_id = db.add_task(user_id, text)
             db.add_points(user_id, 3)
-            await update.message.reply_text(f"✅ تم إضافة المهمة (رقم {task_id})\n+3 نقاط")
+            await update.message.reply_text(f"✅ تمت الإضافة (رقم {task_id})\n+3 نقاط")
             del user_state[user_id]
-        
-        elif user_state[user_id] == "waiting_link":
-            code = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
-            db.save_link(user_id, text, code)
-            db.add_points(user_id, 2)
-            await update.message.reply_text(f"✅ الرابط المختصر:\nhttps://t.me/yourbot?start={code}\n+2 نقاط")
-            del user_state[user_id]
-    
-    else:
-        await update.message.reply_text("❌ استخدم القوائم أو الأوامر")
 
 async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -227,7 +187,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif data == "add_note":
         user_state[user_id] = "waiting_note_title"
-        await query.message.reply_text("📝 أرسل عنوان الملاحظة:")
+        await query.message.reply_text("📝 أرسل العنوان")
         await query.message.delete()
     
     elif data == "show_notes":
@@ -235,25 +195,22 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if notes:
             text = "📝 ملاحظاتك:\n"
             for n in notes[:5]:
-                text += f"\n🆔 {n[0]}\n📌 {n[2]}\n📄 {n[3][:50]}...\n"
+                text += f"\n🆔 {n[0]}\n📌 {n[2]}\n📄 {n[3][:30]}...\n"
             await query.message.reply_text(text)
         else:
             await query.message.reply_text("📝 لا توجد ملاحظات")
     
     elif data == "add_task":
         user_state[user_id] = "waiting_task"
-        await query.message.reply_text("✅ أرسل المهمة:")
+        await query.message.reply_text("✅ أرسل المهمة")
         await query.message.delete()
     
     elif data == "show_tasks":
         tasks = db.get_tasks(user_id)
         if tasks:
             for t in tasks:
-                keyboard = [[InlineKeyboardButton("✅ تم الإنجاز", callback_data=f"done_{t[0]}")]]
-                await query.message.reply_text(
-                    f"🆔 {t[0]}\n📌 {t[2]}",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
+                keyboard = [[InlineKeyboardButton("✅ تم", callback_data=f"done_{t[0]}")]]
+                await query.message.reply_text(f"📌 {t[2]}", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             await query.message.reply_text("✅ لا توجد مهام")
     
@@ -261,7 +218,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_id = int(data.split("_")[1])
         if db.complete_task(task_id, user_id):
             db.add_points(user_id, 10)
-            await query.message.reply_text("✅ تم الإنجاز! +10 نقاط")
+            await query.message.reply_text("✅ أحسنت! +10 نقاط")
             await query.message.delete()
     
     elif data == "game_dice":
@@ -279,12 +236,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             points = 5
         
         db.add_points(user_id, points)
-        await query.message.reply_text(
-            f"🎲 أنت: {user_dice}\n"
-            f"🤖 بوت: {bot_dice}\n"
-            f"{result}\n"
-            f"+{points} نقطة"
-        )
+        await query.message.reply_text(f"🎲 أنت: {user_dice}\n🤖 بوت: {bot_dice}\n{result}\n+{points} نقطة")
     
     elif data == "game_rps":
         keyboard = [
@@ -316,26 +268,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             points = 0
         
         db.add_points(user_id, points)
-        await query.message.reply_text(
-            f"أنت: {user_choice}\n"
-            f"بوت: {bot_choice}\n"
-            f"{result}\n"
-            f"+{points} نقطة"
-        )
-
-async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        city = ' '.join(context.args)
-        weather_info = get_weather(city)
-        await update.message.reply_text(f"🌤 {weather_info}")
-    else:
-        await update.message.reply_text("❌ اكتب /weather المدينة")
-
-async def fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(get_fact())
-
-async def joke(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(get_joke())
+        await query.message.reply_text(f"أنت: {user_choice}\nبوت: {bot_choice}\n{result}\n+{points} نقطة")
 
 # ==================== التشغيل ====================
 def main():
@@ -343,15 +276,10 @@ def main():
     
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # إضافة المعالجات
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("weather", weather))
-    app.add_handler(CommandHandler("fact", fact))
-    app.add_handler(CommandHandler("joke", joke))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(callback))
     
-    # تشغيل البوت
     app.run_polling()
 
 if __name__ == '__main__':
