@@ -185,7 +185,6 @@ class AdvancedVideoBot:
 • بحث متقدم عن الفيديوهات
 • إحصائيات شخصية للمستخدم
 • إعدادات مخصصة لكل مستخدم
-• تحميل قوائم التشغيل كاملة
 • معاينة الفيديو قبل التحميل
 
 👥 *عدد المستخدمين:* {len(self.user_manager.users)}
@@ -197,7 +196,6 @@ class AdvancedVideoBot:
 /stats - إحصائياتك
 /history - سجل التحميلات
 /about - عن البوت
-/cancel - إلغاء العملية
 
 👇 *أرسل الرابط أو كلمة البحث الآن*
         """
@@ -207,7 +205,7 @@ class AdvancedVideoBot:
              InlineKeyboardButton("⚙️ الإعدادات", callback_data="settings")],
             [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats"),
              InlineKeyboardButton("❓ المساعدة", callback_data="help")],
-            [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]
+            [InlineKeyboardButton("ℹ️ عن البوت", callback_data="about")]
         ]
         
         await update.message.reply_text(
@@ -235,18 +233,8 @@ class AdvancedVideoBot:
 
 ⚙️ *الإعدادات المتوفرة:*
 • الجودة الافتراضية
-• صيغة التحميل المفضلة
 • الحذف التلقائي
-
-🎯 *الميزات الخاصة:*
-• تحميل قوائم التشغيل كاملة
-• تحميل الصوت فقط (MP3)
-• معاينة الفيديو
-
-📊 *الإحصائيات:*
-• عدد التحميلات
-• إجمالي حجم التحميل
-• سجل التحميلات
+• الإشعارات
 
 ⚠️ *القيود:*
 • الحد الأقصى للحجم: 50 ميجابايت
@@ -256,11 +244,19 @@ class AdvancedVideoBot:
         """
         
         keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]]
-        await update.message.reply_text(
-            help_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                help_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                help_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
     
     async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """أمر الإعدادات"""
@@ -286,11 +282,18 @@ class AdvancedVideoBot:
             [InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]
         ]
         
-        await update.message.reply_text(
-            settings_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                settings_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                settings_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
         return SETTINGS_MENU
     
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -398,11 +401,19 @@ class AdvancedVideoBot:
         """
         
         keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_start")]]
-        await update.message.reply_text(
-            about_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                about_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                about_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """معالجة الرسائل"""
@@ -604,6 +615,9 @@ class AdvancedVideoBot:
         
         elif data == "stats":
             await self.stats_command(update, context)
+        
+        elif data == "about":
+            await self.about_command(update, context)
         
         elif data == "cancel":
             await query.edit_message_text("✅ *تم الإلغاء بنجاح*", parse_mode='Markdown')
@@ -856,94 +870,6 @@ class AdvancedVideoBot:
                     }
                     self.user_manager.update_stats(user_id, video_info)
                     
-                    # إرسال الفيديو
-                    with open(file, 'rb') as video_file:
-                        caption = f"""
-✅ *تم التحميل بنجاح!*
-
-📹 *العنوان:* {info.get('title', 'فيديو')[:100]}
-⚡ *الجودة:* {QUALITIES.get(quality, quality)}
-📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
-📦 *الحجم:* {self.format_size(size)}
-⏱ *المدة:* {self.format_time(info.get('duration', 0))}
-
-شكراً لاستخدامك البوت ❤️
-                        """
-                        
-                        if fmt == 'mp3':
-    async def download_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE, quality: str, fmt: str = 'mp4'):
-        """تحميل الفيديو"""
-        query = update.callback_query
-        url = context.user_data.get('url')
-        info = context.user_data.get('info', {})
-        title = info.get('title', 'فيديو')
-        
-        if not url:
-            await query.edit_message_text("❌ الرابط غير صالح، أرسل الرابط مرة أخرى")
-            return
-        
-        # بدء التحميل
-        progress_msg = await query.edit_message_text(
-            f"⬇️ *جاري التحميل...*\n\n"
-            f"📹 *العنوان:* {title[:50]}\n"
-            f"⚡ *الجودة:* {QUALITIES.get(quality, quality)}\n"
-            f"📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}\n\n"
-            f"⏳ يرجى الانتظار...",
-            parse_mode='Markdown'
-        )
-        
-        try:
-            # إعدادات التحميل
-            if quality == 'best':
-                format_spec = 'best[ext=mp4]/best'
-            elif fmt == 'mp3':
-                format_spec = 'bestaudio/best'
-            else:
-                format_spec = f'best[height<={quality}][ext={fmt}]/best[height<={quality}]/best'
-            
-            filename = f"{DOWNLOAD_FOLDER}/video_{datetime.now().strftime('%Y%m%d_%H%M%S')}.%(ext)s"
-            
-            ydl_opts = {
-                'format': format_spec,
-                'outtmpl': filename,
-                'quiet': True,
-                'no_warnings': True,
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }] if fmt == 'mp3' else [],
-            }
-            
-            # التحميل
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file = ydl.prepare_filename(info)
-                
-                # تعديل اسم الملف للصيغ المختلفة
-                if fmt == 'mp3':
-                    file = file.replace('.webm', '.mp3').replace('.m4a', '.mp3')
-                else:
-                    # تغيير الامتداد إذا كان مختلفاً
-                    for ext in ['.mp4', '.webm', '.mkv']:
-                        test_file = file.replace('%(ext)s', ext).replace('.*', ext)
-                        if os.path.exists(test_file):
-                            file = test_file
-                            break
-                
-                if os.path.exists(file):
-                    size = os.path.getsize(file)
-                    
-                    # تحديث إحصائيات المستخدم
-                    user_id = update.effective_user.id
-                    video_info = {
-                        'title': info.get('title', 'فيديو'),
-                        'extractor': info.get('extractor', 'Unknown'),
-                        'quality': quality,
-                        'filesize': size
-                    }
-                    self.user_manager.update_stats(user_id, video_info)
-                    
                     # إرسال الملف حسب نوعه
                     with open(file, 'rb') as video_file:
                         caption = f"""
@@ -953,102 +879,3 @@ class AdvancedVideoBot:
 ⚡ *الجودة:* {QUALITIES.get(quality, quality)}
 📁 *الصيغة:* {FORMATS.get(fmt, fmt).upper()}
 📦 *الحجم:* {self.format_size(size)}
-⏱ *المدة:* {self.format_time(info.get('duration', 0))}
-
-شكراً لاستخدامك البوت ❤️
-                        """
-                        
-                        if fmt == 'mp3':
-                            # إرسال كملف صوتي
-                            await context.bot.send_audio(
-                                chat_id=update.effective_user.id,
-                                audio=video_file,
-                                caption=caption,
-                                parse_mode='Markdown',
-                                title=info.get('title', 'صوت'),
-                                performer=info.get('uploader', 'غير معروف'),
-                                duration=info.get('duration', 0)
-                            )
-                        else:
-                            # إرسال كفيديو
-                            await context.bot.send_video(
-                                chat_id=update.effective_user.id,
-                                video=video_file,
-                                caption=caption,
-                                parse_mode='Markdown',
-                                supports_streaming=True,
-                                duration=info.get('duration', 0),
-                                width=info.get('width', 0),
-                                height=info.get('height', 0)
-                            )
-                    
-                    # حذف الملف بعد الإرسال
-                    os.remove(file)
-                    
-                    # حذف رسالة التحميل
-                    await progress_msg.delete()
-                    
-                else:
-                    await progress_msg.edit_text("❌ فشل في العثور على الملف المحمل")
-                    
-        except Exception as e:
-            await progress_msg.edit_text(f"❌ خطأ في التحميل: {str(e)[:200]}")
-            logger.error(f"Download error: {e}")
-    
-    # ========== تشغيل البوت ==========
-    def run(self):
-        """تشغيل البوت"""
-        try:
-            # إنشاء التطبيق
-            app = Application.builder().token(BOT_TOKEN).build()
-            
-            # إضافة معالجات الأوامر
-            app.add_handler(CommandHandler("start", self.start))
-            app.add_handler(CommandHandler("help", self.help_command))
-            app.add_handler(CommandHandler("settings", self.settings_command))
-            app.add_handler(CommandHandler("stats", self.stats_command))
-            app.add_handler(CommandHandler("history", self.history_command))
-            app.add_handler(CommandHandler("about", self.about_command))
-            
-            # إضافة معالج الرسائل النصية
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-            
-            # إضافة معالج الأزرار
-            app.add_handler(CallbackQueryHandler(self.handle_callback))
-            
-            # معالج الأخطاء
-            app.add_error_handler(self.error_handler)
-            
-            # تشغيل البوت
-            print("=" * 50)
-            print("🚀 بوت تحميل الفيديوهات الاحترافي")
-            print("=" * 50)
-            print(f"✅ البوت يعمل بنجاح!")
-            print(f"👥 عدد المستخدمين المسجلين: {len(self.user_manager.users)}")
-            print(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
-            print(f"⚡ جاهز لاستقبال الروابط والبحث...")
-            print("=" * 50)
-            
-            app.run_polling(allowed_updates=Update.ALL_TYPES)
-            
-        except Exception as e:
-            print(f"❌ خطأ في تشغيل البوت: {e}")
-            logger.error(f"Bot startup error: {e}")
-    
-    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """معالج الأخطاء"""
-        logger.error(f"حدث خطأ: {context.error}")
-        
-        try:
-            if update and update.effective_message:
-                await update.effective_message.reply_text(
-                    "❌ عذراً، حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى لاحقاً."
-                )
-        except:
-            pass
-
-# ==================== تشغيل البوت ====================
-if __name__ == "__main__":
-    # إنشاء وتشغيل البوت
-    bot = AdvancedVideoBot()
-    bot.run()
