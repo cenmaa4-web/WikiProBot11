@@ -871,6 +871,17 @@ class AdvancedVideoBot:
                         """
                         
                         if fmt == 'mp3':
-                            await context.bot.send_audio(
-                                chat_id=update.effective_user.id,
-                                audio=video_file
+if fmt == 'mp3':
+    await context.bot.send_audio(
+        chat_id=update.effective_user.id,
+        audio=video_file,
+        caption=caption,
+        parse_mode='Markdown'
+    )
+else:
+    await context.bot.send_video(
+        chat_id=update.effective_user.id,
+        video=video_file,
+        caption=caption,
+        parse_mode='Markdown'
+    )
