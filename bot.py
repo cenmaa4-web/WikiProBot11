@@ -34,9 +34,9 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 
 # ==================== الإعدادات الأساسية ====================
-BOT_TOKEN = "7536390168:AAHZNO7XjIRBpwhMf3O5RojM9f2RrPYzUZ4"  # ضع التوكن هنا
+BOT_TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"  # ضع التوكن هنا
 
-if not BOT_TOKEN or BOT_TOKEN == "7536390168:AAHZNO7XjIRBpwhMf3O5RojM9f2RrPYzUZ4":
+if not BOT_TOKEN or BOT_TOKEN == "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4":
     print("=" * 50)
     print("❌ خطأ: التوكن غير صحيح!")
     print("📌 اذهب إلى @BotFather في تليجرام")
