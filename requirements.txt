@@ -1,7 +1,5 @@
-# المكتبات الأساسية مع إصدارات متوافقة
-python-telegram-bot==20.7
+python-telegram-bot
 yt-dlp
 aiohttp
 aiofiles
 Pillow
-requests
