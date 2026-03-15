@@ -1,13 +1,9 @@
-# المكتبات الأساسية
 python-telegram-bot==20.3
 yt-dlp
 aiohttp==3.8.6
 aiofiles
 requests
-Pillow==9.5.0
-cryptography
 python-dotenv
-redis
-sqlalchemy
+cryptography
 psutil
 pytz
