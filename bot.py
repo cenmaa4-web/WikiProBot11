@@ -19,42 +19,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # توكن البوت - ضع التوكن الخاص بك هنا
-TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"
+TOKEN = os.environ.get("TOKEN", "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4")
 
 # استخدام مجلد مؤقت في Railway
 DOWNLOAD_FOLDER = '/tmp/downloads'
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
-    logger.info(f"✅ تم إنشاء مجلد التحميلات: {DOWNLOAD_FOLDER}")
-
-# التحقق من وجود ffmpeg
-def check_ffmpeg():
-    try:
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
-        logger.info("✅ FFmpeg مثبت")
-        return True
-    except Exception as e:
-        logger.error(f"❌ FFmpeg غير مثبت: {e}")
-        return False
 
 # إعدادات yt-dlp المبسطة
 YDL_OPTIONS = {
-    'format': 'best[filesize<50M][height<=720]',  # فيديو أقل من 50 ميجا
+    'format': 'best[height<=480]',  # جودة أقل لضمان الحجم
     'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s_%(id)s.%(ext)s'),
     'quiet': True,
     'no_warnings': True,
     'ignoreerrors': True,
     'no_color': True,
-    'extract_flat': False,
-    'force_generic_extractor': False,
-    'socket_timeout': 30,
-    'retries': 5,
-    'fragment_retries': 5,
-    'file_access_retries': 3,
-    'extractor_retries': 3,
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -62,9 +41,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
         "👋 مرحباً! أنا بوت تحميل الفيديوهات\n\n"
         "📥 أرسل لي رابط فيديو وسأقوم بتحميله لك فوراً\n\n"
-        "✅ المنصات المدعومة:\n"
-        "• YouTube - تيك توك - انستغرام\n"
-        "• فيسبوك - تويتر - Pinterest\n\n"
         "✨ فقط أرسل الرابط وسأبدأ التحميل!"
     )
     await update.message.reply_text(welcome_msg)
@@ -81,46 +57,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     progress_msg = await update.message.reply_text("⏳ جاري تحميل الفيديو...")
     
     try:
-        logger.info(f"محاولة تحميل: {url}")
-        
         # تحميل الفيديو
-        video_info = await download_video(url)
+        video_path = await download_video(url)
         
-        if video_info and video_info['path'] and os.path.exists(video_info['path']):
-            file_size = os.path.getsize(video_info['path']) / (1024 * 1024)
+        if video_path and os.path.exists(video_path):
+            file_size = os.path.getsize(video_path) / (1024 * 1024)
             
             if file_size > 50:
                 await progress_msg.edit_text(f"❌ الفيديو كبير جداً ({file_size:.1f} MB)")
-                os.remove(video_info['path'])
+                os.remove(video_path)
                 return
             
             # حذف رسالة التقدم
             await progress_msg.delete()
             
             # إرسال الفيديو
-            with open(video_info['path'], 'rb') as video_file:
+            with open(video_path, 'rb') as video_file:
                 await update.message.reply_video(
                     video=video_file,
-                    caption=f"✅ تم التحميل بنجاح!\n📹 {video_info['title'][:50]}...\n📊 {file_size:.1f} MB",
+                    caption=f"✅ تم التحميل بنجاح!\n📊 {file_size:.1f} MB",
                     supports_streaming=True
                 )
             
             # حذف الملف
-            os.remove(video_info['path'])
-            logger.info(f"✅ تم حذف الملف: {video_info['path']}")
+            os.remove(video_path)
             
         else:
-            await progress_msg.edit_text(
-                "❌ لم أتمكن من تحميل الفيديو\n\n"
-                "🔍 تأكد من:\n"
-                "• الرابط صحيح\n"
-                "• الفيديو عام وليس خاص\n"
-                "• جرب رابط آخر"
-            )
+            await progress_msg.edit_text("❌ لم أتمكن من تحميل الفيديو")
             
     except Exception as e:
         logger.error(f"خطأ: {str(e)}")
-        await progress_msg.edit_text(f"❌ حدث خطأ: {str(e)[:100]}")
+        await progress_msg.edit_text("❌ حدث خطأ أثناء التحميل")
 
 async def download_video(url):
     """تحميل الفيديو"""
@@ -128,58 +95,32 @@ async def download_video(url):
         loop = asyncio.get_event_loop()
         
         def download_sync():
-            try:
-                with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-                    # محاولة التحميل
-                    logger.info("بدء التحميل...")
-                    
-                    # استخراج المعلومات والتحميل
+            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+                try:
+                    # تحميل الفيديو
                     info = ydl.extract_info(url, download=True)
                     
-                    if info is None:
-                        logger.error("لا يمكن استخراج معلومات الفيديو")
-                        return None
-                    
-                    # البحث عن الملف المحمل
-                    filename = None
-                    
-                    # الطريقة الأولى: من requested_downloads
-                    if 'requested_downloads' in info and info['requested_downloads']:
+                    # البحث عن الملف
+                    if 'requested_downloads' in info:
                         for download in info['requested_downloads']:
                             if 'filepath' in download:
-                                filename = download['filepath']
-                                break
+                                return download['filepath']
                     
-                    # الطريقة الثانية: prepare_filename
-                    if not filename or not os.path.exists(filename):
-                        test_filename = ydl.prepare_filename(info)
-                        if os.path.exists(test_filename):
-                            filename = test_filename
+                    # طريقة بديلة
+                    filename = ydl.prepare_filename(info)
+                    if os.path.exists(filename):
+                        return filename
                     
-                    # الطريقة الثالثة: البحث في المجلد
-                    if not filename or not os.path.exists(filename):
-                        import glob
-                        files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
-                        if files:
-                            # خذ أحدث ملف
-                            filename = max(files, key=os.path.getctime)
+                    # بحث في المجلد
+                    import glob
+                    files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
+                    if files:
+                        return max(files, key=os.path.getctime)
                     
-                    if filename and os.path.exists(filename):
-                        logger.info(f"✅ تم التحميل: {filename}")
-                        return {
-                            'path': filename,
-                            'title': info.get('title', 'فيديو'),
-                            'size': os.path.getsize(filename)
-                        }
-                    else:
-                        logger.error("لم يتم العثور على الملف")
-                        return None
-                        
-            except Exception as e:
-                logger.error(f"خطأ في التحميل: {str(e)}")
-                return None
+                except Exception as e:
+                    logger.error(f"خطأ في التحميل: {str(e)}")
+                    return None
         
-        # تنفيذ التحميل
         result = await loop.run_in_executor(None, download_sync)
         return result
         
@@ -191,9 +132,6 @@ def main():
     """تشغيل البوت"""
     logger.info("🚀 بدء تشغيل البوت...")
     
-    # التحقق من ffmpeg
-    check_ffmpeg()
-    
     # إنشاء التطبيق
     application = Application.builder().token(TOKEN).build()
     
@@ -203,8 +141,16 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # تشغيل البوت
-    logger.info("✅ البوت جاهز للعمل!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    port = int(os.environ.get("PORT", 8080))
+    logger.info(f"✅ البوت جاهز للعمل على المنفذ {port}!")
+    
+    # استخدام webhook بدلاً من polling في Railway
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=TOKEN,
+        webhook_url=f"https://{os.environ.get('RAILWAY_STATIC_URL', '')}/{TOKEN}"
+    )
 
 if __name__ == '__main__':
     main()
