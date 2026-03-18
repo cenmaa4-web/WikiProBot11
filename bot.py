@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import logging
 import asyncio
@@ -21,7 +24,6 @@ YDL_OPTIONS = {
     'outtmpl': 'downloads/%(title)s.%(ext)s',
     'quiet': True,
     'no_warnings': True,
-    'extract_flat': False,
     'ignoreerrors': True,
     'no_color': True,
 }
@@ -76,6 +78,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # حذف الفيديو بعد الإرسال لتوفير المساحة
             os.remove(video_path)
+            logger.info(f"تم حذف الملف: {video_path}")
             
         else:
             await progress_msg.edit_text("❌ عذراً، لم أتمكن من تحميل الفيديو. تأكد من الرابط وحاول مرة أخرى")
@@ -87,28 +90,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def download_video(url):
     """تحميل الفيديو باستخدام yt-dlp"""
     try:
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            # استخراج معلومات الفيديو
-            info = ydl.extract_info(url, download=True)
-            
-            # الحصول على مسار الملف المحمل
-            if 'entries' in info:  # إذا كان قائمة تشغيل
-                video = info['entries'][0]
-            else:
-                video = info
-            
-            filename = ydl.prepare_filename(video)
-            
-            # التأكد من وجود الملف
-            if os.path.exists(filename):
-                return filename
-            
-            # البحث عن الملف بامتدادات مختلفة
-            for ext in ['.mp4', '.webm', '.mkv']:
-                if os.path.exists(filename.replace('.%(ext)s' % video['ext'], ext)):
-                    return filename.replace('.%(ext)s' % video['ext'], ext)
-            
-            return None
+        # تشغيل yt-dlp في thread منفصل لمنع حظر الحدث
+        loop = asyncio.get_event_loop()
+        
+        def download():
+            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+                try:
+                    # استخراج معلومات الفيديو وتحميله
+                    info = ydl.extract_info(url, download=True)
+                    
+                    # الحصول على مسار الملف المحمل
+                    if 'entries' in info:  # إذا كان قائمة تشغيل
+                        video = info['entries'][0]
+                    else:
+                        video = info
+                    
+                    filename = ydl.prepare_filename(video)
+                    
+                    # التأكد من وجود الملف
+                    if os.path.exists(filename):
+                        return filename
+                    
+                    # البحث عن الملف بامتدادات مختلفة
+                    base_filename = filename.rsplit('.', 1)[0]
+                    for ext in ['.mp4', '.webm', '.mkv']:
+                        test_filename = base_filename + ext
+                        if os.path.exists(test_filename):
+                            return test_filename
+                    
+                    # بحث عام عن أي ملف حديث في مجلد التحميلات
+                    downloads_dir = 'downloads'
+                    files = [f for f in os.listdir(downloads_dir) if os.path.isfile(os.path.join(downloads_dir, f))]
+                    if files:
+                        # أخذ أحدث ملف
+                        latest_file = max([os.path.join(downloads_dir, f) for f in files], key=os.path.getctime)
+                        return latest_file
+                    
+                    return None
+                    
+                except Exception as e:
+                    logger.error(f"خطأ في yt-dlp: {str(e)}")
+                    return None
+        
+        # تنفيذ التحميل في thread منفصل
+        result = await loop.run_in_executor(None, download)
+        return result
             
     except Exception as e:
         logger.error(f"خطأ في التحميل: {str(e)}")
@@ -120,22 +146,31 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """الدالة الرئيسية لتشغيل البوت"""
-    # إنشاء التطبيق
-    application = Application.builder().token(TOKEN).build()
-    
-    # إضافة معالجات الأوامر
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", start))
-    
-    # إضافة معالج للرسائل النصية (الروابط)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # إضافة معالج الأخطاء
-    application.add_error_handler(error_handler)
-    
-    # تشغيل البوت
-    print("🤖 البوت يعمل الآن...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # إنشاء التطبيق
+        application = Application.builder().token(TOKEN).build()
+        
+        # إضافة معالجات الأوامر
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", start))
+        
+        # إضافة معالج للرسائل النصية (الروابط)
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        # إضافة معالج الأخطاء
+        application.add_error_handler(error_handler)
+        
+        # تشغيل البوت
+        print("🤖 البوت يعمل الآن...")
+        print("📝 توكن البوت:", TOKEN[:10] + "...")
+        print("🚀 انتظر حتى يبدأ البوت باستقبال الرسائل...")
+        
+        # بدء البوت
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        logger.error(f"خطأ في تشغيل البوت: {str(e)}")
+        print(f"❌ خطأ: {str(e)}")
 
 if __name__ == '__main__':
     main()
