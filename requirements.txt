@@ -1,3 +1,2 @@
-pyrogram==2.0.106
-tgcrypto
-yt-dlp
+python-telegram-bot==20.7
+yt-dlp==2024.7.25
