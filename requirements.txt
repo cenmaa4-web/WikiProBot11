@@ -1,7 +1,2 @@
 python-telegram-bot==20.7
 yt-dlp==2024.7.25
-pillow==10.3.0
-moviepy==1.0.3
-aiohttp==3.9.5
-requests==2.31.0
-beautifulsoup4==4.12.3
