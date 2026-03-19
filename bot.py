@@ -10,170 +10,117 @@ import yt_dlp
 import tempfile
 import shutil
 
-# إعداد التسجيل
+# ===== إعداد التسجيل =====
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# توكن البوت - ضع التوكن الخاص بك هنا
-TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"
+# ===== التوكن =====
+TOKEN = os.environ.get("8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4")
 
-# مجلد مؤقت للتحميلات
+# ===== مجلد مؤقت =====
 DOWNLOAD_FOLDER = tempfile.mkdtemp()
-logger.info(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
+logger.info(f"📁 Temp Folder: {DOWNLOAD_FOLDER}")
 
-# إعدادات yt-dlp المبسطة
+# ===== إعدادات التحميل =====
 YDL_OPTIONS = {
-    'format': 'best[height<=480]',  # جودة متوسطة لضمان الحجم
-    'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
+    'format': 'bestvideo+bestaudio/best',
+    'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(id)s.%(ext)s'),
+    'noplaylist': True,
     'quiet': True,
     'no_warnings': True,
-    'ignoreerrors': True,
+    'merge_output_format': 'mp4',
 }
 
+# ===== بدء =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """رسالة الترحيب"""
-    welcome_msg = (
-        "👋 مرحباً! أنا بوت تحميل الفيديوهات\n\n"
-        "📥 أرسل لي رابط فيديو وسأقوم بتحميله لك فوراً\n\n"
-        "✅ المنصات المدعومة:\n"
-        "• YouTube - TikTok - Instagram\n"
-        "• Facebook - Twitter - وغيرها\n\n"
-        "✨ فقط أرسل الرابط وسأبدأ التحميل!"
+    await update.message.reply_text(
+        "👋 أهلاً بك!\n\n"
+        "📥 أرسل رابط فيديو وسأحمله فورًا\n\n"
+        "🔥 يدعم:\n"
+        "YouTube / TikTok / Instagram / Facebook"
     )
-    await update.message.reply_text(welcome_msg)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الرسائل"""
-    url = update.message.text.strip()
-    
-    # التحقق من الرابط
-    if not url.startswith(('http://', 'https://')):
-        await update.message.reply_text("❌ الرجاء إرسال رابط صحيح يبدأ بـ http:// أو https://")
-        return
-    
-    # إرسال رسالة التحميل
-    progress_msg = await update.message.reply_text("⏳ جاري تحميل الفيديو... الرجاء الانتظار")
-    
-    try:
-        logger.info(f"محاولة تحميل: {url}")
-        
-        # تحميل الفيديو
-        video_path = await download_video(url)
-        
-        if video_path and os.path.exists(video_path):
-            file_size = os.path.getsize(video_path) / (1024 * 1024)  # حجم الملف بالميجابايت
-            
-            # التحقق من حجم الملف (تليجرام يسمح حتى 50 ميجابايت)
-            if file_size > 50:
-                await progress_msg.edit_text(f"❌ الفيديو كبير جداً ({file_size:.1f} MB). الحد الأقصى 50 MB")
-                os.remove(video_path)
-                return
-            
-            # حذف رسالة التقدم
-            await progress_msg.delete()
-            
-            # إرسال الفيديو
-            with open(video_path, 'rb') as video_file:
-                await update.message.reply_video(
-                    video=video_file,
-                    caption=f"✅ تم التحميل بنجاح!\n📊 الحجم: {file_size:.1f} MB",
-                    supports_streaming=True
-                )
-            
-            # حذف الفيديو بعد الإرسال
-            os.remove(video_path)
-            logger.info(f"✅ تم حذف الملف: {video_path}")
-            
-        else:
-            await progress_msg.edit_text(
-                "❌ عذراً، لم أتمكن من تحميل الفيديو\n\n"
-                "تأكد من:\n"
-                "• الرابط صحيح\n"
-                "• الفيديو متاح للعامة\n"
-                "• جرب رابط آخر"
-            )
-            
-    except Exception as e:
-        logger.error(f"خطأ في التحميل: {str(e)}")
-        await progress_msg.edit_text(f"❌ حدث خطأ: {str(e)[:100]}")
-
+# ===== تحميل الفيديو =====
 async def download_video(url):
-    """تحميل الفيديو"""
     try:
         loop = asyncio.get_event_loop()
-        
-        def download_sync():
-            try:
-                with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-                    # تحميل الفيديو
-                    logger.info("بدء التحميل...")
-                    info = ydl.extract_info(url, download=True)
-                    
-                    # الحصول على مسار الملف
-                    if 'requested_downloads' in info and info['requested_downloads']:
-                        for download in info['requested_downloads']:
-                            if 'filepath' in download:
-                                return download['filepath']
-                    
-                    # طريقة بديلة
-                    filename = ydl.prepare_filename(info)
-                    if os.path.exists(filename):
-                        return filename
-                    
-                    # بحث في مجلد التحميلات
-                    import glob
-                    files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
-                    if files:
-                        # خذ أحدث ملف
-                        latest_file = max(files, key=os.path.getctime)
-                        return latest_file
-                    
-                    return None
-                    
-            except Exception as e:
-                logger.error(f"خطأ في التحميل المتزامن: {str(e)}")
-                return None
-        
-        # تنفيذ التحميل في thread منفصل
-        result = await loop.run_in_executor(None, download_sync)
-        return result
-        
+
+        def run():
+            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file_path = ydl.prepare_filename(info)
+
+                # تأكد MP4
+                if not file_path.endswith(".mp4"):
+                    base = os.path.splitext(file_path)[0]
+                    mp4_file = base + ".mp4"
+                    if os.path.exists(mp4_file):
+                        file_path = mp4_file
+
+                return file_path if os.path.exists(file_path) else None
+
+        return await loop.run_in_executor(None, run)
+
     except Exception as e:
-        logger.error(f"خطأ عام في التحميل: {str(e)}")
+        logger.error(f"❌ Download Error: {e}")
         return None
 
+# ===== استقبال الرسائل =====
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+
+    if not url.startswith("http"):
+        return await update.message.reply_text("❌ أرسل رابط صحيح")
+
+    msg = await update.message.reply_text("⏳ جاري التحميل...")
+
+    video_path = await download_video(url)
+
+    if not video_path:
+        return await msg.edit_text("❌ فشل التحميل (الرابط خاص أو غير مدعوم)")
+
+    file_size = os.path.getsize(video_path) / (1024 * 1024)
+
+    if file_size > 50:
+        os.remove(video_path)
+        return await msg.edit_text(f"❌ الحجم كبير ({file_size:.1f}MB)")
+
+    try:
+        await update.message.reply_video(
+            video=open(video_path, 'rb'),
+            caption=f"✅ تم التحميل\n📦 {file_size:.1f} MB",
+            supports_streaming=True
+        )
+    except:
+        await update.message.reply_document(
+            document=open(video_path, 'rb'),
+            caption="📁 تم الإرسال كملف"
+        )
+
+    os.remove(video_path)
+
+# ===== تنظيف =====
 def cleanup():
-    """تنظيف الملفات المؤقتة عند الإغلاق"""
     try:
         shutil.rmtree(DOWNLOAD_FOLDER)
-        logger.info("✅ تم تنظيف الملفات المؤقتة")
     except:
         pass
 
+# ===== تشغيل =====
 def main():
-    """تشغيل البوت"""
-    logger.info("🚀 بدء تشغيل البوت...")
-    
-    try:
-        # إنشاء التطبيق
-        application = Application.builder().token(TOKEN).build()
-        
-        # إضافة المعالجات
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        
-        # تشغيل البوت باستخدام polling
-        logger.info("✅ البوت جاهز للعمل! باستخدام Polling...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-        
-    except Exception as e:
-        logger.error(f"خطأ في تشغيل البوت: {str(e)}")
-    finally:
-        cleanup()
+    logger.info("🚀 Bot Starting...")
 
-if __name__ == '__main__':
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    app.run_polling()
+
+    cleanup()
+
+if __name__ == "__main__":
     main()
