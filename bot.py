@@ -14,8 +14,14 @@ import time
 import json
 from urllib.parse import urlparse, quote
 from datetime import datetime, timedelta
-import requests
-from io import BytesIO
+
+# ============= إضافة requests بشكل آمن =============
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    print("⚠️ requests غير مثبتة، سيتم استخدام طريقة بديلة")
 
 # ============= الكود الأصلي بالكامل =============
 
@@ -184,12 +190,33 @@ async def download_thumbnail(url: str, video_id: str) -> str:
     try:
         if not url:
             return None
+            
         filename = os.path.join(THUMBNAIL_FOLDER, f"{video_id}.jpg")
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            with open(filename, 'wb') as f:
-                f.write(response.content)
-            return filename
+        
+        # استخدام yt-dlp لتحميل الصورة بدلاً من requests
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                # محاولة تحميل الصورة باستخدام yt-dlp
+                info = ydl.extract_info(url, download=False)
+                if info and 'thumbnail' in info:
+                    import urllib.request
+                    urllib.request.urlretrieve(info['thumbnail'], filename)
+                    if os.path.exists(filename):
+                        return filename
+        except:
+            pass
+        
+        # إذا فشل، نحاول بطريقة أخرى
+        if REQUESTS_AVAILABLE:
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    with open(filename, 'wb') as f:
+                        f.write(response.content)
+                    return filename
+            except:
+                pass
+                
     except Exception as e:
         logger.error(f"خطأ في تحميل الصورة: {e}")
     return None
@@ -448,7 +475,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
             
             await progress_msg.delete()
             
-            if thumb_path:
+            if thumb_path and os.path.exists(thumb_path):
                 with open(thumb_path, 'rb') as thumb_file:
                     await update.message.reply_photo(
                         photo=thumb_file,
@@ -456,7 +483,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
                         reply_markup=reply_markup,
                         parse_mode='Markdown'
                     )
-                os.remove(thumb_path)
+                try:
+                    os.remove(thumb_path)
+                except:
+                    pass
             else:
                 await update.message.reply_text(
                     caption,
@@ -515,7 +545,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE, quer
                 # تحميل الصورة المصغرة
                 thumb_path = None
                 if video['thumbnail']:
-                    thumb_path = await download_thumbnail(video['thumbnail'], f"search_{i}")
+                    thumb_path = await download_thumbnail(video['thumbnail'], f"search_{i}_{int(time.time())}")
                 
                 # أزرار إضافية
                 keyboard = [
@@ -539,7 +569,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE, quer
                     f"👤 {video['uploader']} | ⏱️ {duration_min}:{duration_sec:02d} | 👁️ {video['views']:,}\n"
                 )
                 
-                if thumb_path:
+                if thumb_path and os.path.exists(thumb_path):
                     with open(thumb_path, 'rb') as thumb_file:
                         await update.message.reply_photo(
                             photo=thumb_file,
@@ -547,7 +577,10 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE, quer
                             reply_markup=reply_markup,
                             parse_mode='Markdown'
                         )
-                    os.remove(thumb_path)
+                    try:
+                        os.remove(thumb_path)
+                    except:
+                        pass
                 else:
                     await update.message.reply_text(
                         caption,
@@ -673,7 +706,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if info:
             query_text = info['title'].split()[0:3]  # أول 3 كلمات
             query_text = ' '.join(query_text)
+            # إرسال رسالة جديدة بالنتائج
             await handle_search(update, context, query_text)
+            await query.message.delete()
         else:
             await query.edit_message_caption(caption="❌ **لا يمكن العثور على فيديوهات مشابهة**")
     
@@ -765,6 +800,7 @@ def main():
         print(f"📝 توكن: {TOKEN[:15]}...")
         print(f"📁 المجلد: {DOWNLOAD_FOLDER}")
         print(f"🌐 المنصات: {len(ALL_SUPPORTED_SITES)}")
+        print(f"📦 requests: {'✅ مثبت' if REQUESTS_AVAILABLE else '⚠️ غير مثبت'}")
         print("="*60 + "\n")
         
         application.run_polling(allowed_updates=Update.ALL_TYPES)
