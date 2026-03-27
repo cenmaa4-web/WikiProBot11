@@ -1,42 +1,94 @@
+import re
+import json
 import os
-import logging
-from dotenv import load_dotenv
-from google import genai
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# 1. تحميل الإعدادات من ملف .env
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("8753575669:AAHH6EXVMEVxIoG4RhFHhl9EafyuKoJmLSs")
-GEMINI_API_KEY = os.getenv("AIzaSyA6N7tA80pmCnuLnCUz-Zys_YBsv6iqzXc")
+# ملف تخزين الروابط
+DATA_FILE = "links.json"
 
-# 2. إعداد مكتبة Gemini الجديدة
-client = genai.Client(api_key=GEMINI_API_KEY)
+# تهيئة ملف JSON إذا لم يكن موجود
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({"channels": [], "groups": []}, f, indent=4)
 
-# إعداد سجلات الأخطاء
-logging.basicConfig(level=logging.INFO)
+# دالة لقراءة البيانات من JSON
+def load_links():
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
+# دالة لحفظ البيانات في JSON
+def save_links(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# دالة لاستخراج روابط تلجرام
+def extract_telegram_links(text):
+    return re.findall(r'https?://t\.me/\S+', text)
+
+# دالة لتصنيف الروابط
+def classify_links(links):
+    channels = []
+    groups = []
+    for link in links:
+        if "/+" in link or "/joinchat" in link:
+            groups.append(link)
+        else:
+            channels.append(link)
+    return channels, groups
+
+# دالة لتحديث الروابط الجديدة
+def update_links(new_links):
+    data = load_links()
+    new_channels, new_groups = classify_links(new_links)
+
+    # إضافة القنوات الجديدة بدون تكرار
+    for ch in new_channels:
+        if ch not in data["channels"]:
+            data["channels"].append(ch)
+    
+    # إضافة المجموعات الجديدة بدون تكرار
+    for gr in new_groups:
+        if gr not in data["groups"]:
+            data["groups"].append(gr)
+    
+    save_links(data)
+    return data
+
+# أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("أهلاً بك! أنا البوت المحدث. كيف يمكنني مساعدتك؟")
+    await update.message.reply_text("أهلا بك! أرسل لي روابط تلجرام وسأفرزها لك إلى قنوات ومجموعات.")
 
+# استقبال الرسائل
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        # إرسال النص لـ Gemini باستخدام المكتبة الجديدة
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=update.message.text
-        )
-        await update.message.reply_text(response.text)
-    except Exception as e:
-        logging.error(f"Error: {e}")
-        await update.message.reply_text("عذراً، حدث خطأ أثناء المعالجة.")
+    text = update.message.text
+    links = extract_telegram_links(text)
+    if not links:
+        await update.message.reply_text("لم أجد أي روابط تلجرام في رسالتك.")
+        return
+    
+    data = update_links(links)
 
-if __name__ == '__main__':
-    # بناء البوت
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # إرسال القنوات
+    if data["channels"]:
+        channels_text = "📢 القنوات:\n" + "\n".join([f"{i+1}- {link}" for i, link in enumerate(data["channels"])])
+        await update.message.reply_text(channels_text)
     
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    
-    print("البوت يعمل الآن بالمكتبة الجديدة...")
-    application.run_polling()
+    # إرسال المجموعات
+    if data["groups"]:
+        groups_text = "👥 المجموعات:\n" + "\n".join([f"{i+1}- {link}" for i, link in enumerate(data["groups"])])
+        await update.message.reply_text(groups_text)
+
+# نقطة البداية
+def main():
+    TOKEN = "8753575669:AAHH6EXVMEVxIoG4RhFHhl9EafyuKoJmLSs"  # ضع توكن البوت هنا
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("البوت يعمل الآن...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
