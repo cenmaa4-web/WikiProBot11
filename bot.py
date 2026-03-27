@@ -4,13 +4,17 @@
 import os
 import logging
 import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import yt_dlp
 import tempfile
 import shutil
 import re
+import time
+import urllib.request
+import glob
 from urllib.parse import urlparse
+from datetime import datetime
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -24,6 +28,8 @@ TOKEN = os.environ.get("TOKEN", "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"
 
 # مجلد مؤقت للتحميلات
 DOWNLOAD_FOLDER = tempfile.mkdtemp()
+THUMBNAIL_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'thumbnails')
+os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
 logger.info(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
 
 # قائمة المنصات المدعومة
@@ -41,373 +47,594 @@ SUPPORTED_SITES = [
     "twitch.tv",
     "tumblr.com",
     "vk.com",
-    "telegram.org",
-    "whatsapp.com"
 ]
 
-# إعدادات yt-dlp المحسّنة
+# إعدادات yt-dlp
 YDL_OPTIONS = {
-    'format': 'best[height<=720][filesize<50M]',  # أفضل جودة مع حجم أقل من 50 ميجا
+    'format': 'best[height<=720]',
     'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s_%(id)s.%(ext)s'),
     'quiet': True,
     'no_warnings': True,
     'ignoreerrors': True,
     'no_color': True,
-    'extract_flat': False,
     'socket_timeout': 30,
     'retries': 5,
-    'fragment_retries': 5,
-    'file_access_retries': 3,
-    'extractor_retries': 3,
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 }
 
-# خيارات بديلة إذا فشل التحميل الأول
-FALLBACK_OPTIONS = [
-    {'format': 'best[height<=480]'},  # جودة أقل
-    {'format': 'best[height<=360]'},  # جودة منخفضة
-    {'format': 'worst'},  # أسوأ جودة
-]
+# خيارات التحميل ليوتيوب
+YOUTUBE_DOWNLOAD_OPTIONS = {
+    'video': {
+        'name': '🎬 تحميل فيديو',
+        'format': 'best[height<=720]',
+        'type': 'video'
+    },
+    'audio': {
+        'name': '🎵 ملف MP3',
+        'format': 'bestaudio/best',
+        'type': 'audio',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
+    },
+    'voice': {
+        'name': '🎤 بصمة صوتية',
+        'format': 'bestaudio/best',
+        'type': 'voice',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'ogg',
+            'preferredquality': '64',
+        }]
+    }
+}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """رسالة الترحيب"""
-    welcome_msg = (
-        "🎥 **مرحباً بك في بوت تحميل الفيديوهات المتطور!**\n\n"
-        "📥 **أرسل لي رابط فيديو وسأقوم بتحميله لك فوراً**\n\n"
-        "✅ **المنصات المدعومة:**\n"
-        "• YouTube - TikTok - Instagram\n"
-        "• Facebook - Twitter/X - Pinterest\n"
-        "• Reddit - LinkedIn - Dailymotion\n"
-        "• Vimeo - Twitch - Tumblr\n"
-        "• VK - Telegram - WhatsApp\n"
-        "• **وغيرها الكثير...**\n\n"
-        "⚡ **مميزات البوت:**\n"
-        "• تحميل بجودة عالية (حتى 720p)\n"
-        "• دعم جميع المنصات تقريباً\n"
-        "• سرعة تحميل عالية\n"
-        "• معالجة ذكية للأخطاء\n\n"
-        "✨ **فقط أرسل الرابط وسأبدأ التحميل فوراً!**"
-    )
-    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+# إحصائيات
+download_stats = {
+    'total_downloads': 0,
+    'total_searches': 0,
+    'start_time': datetime.now()
+}
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مساعدة البوت"""
-    help_msg = (
-        "🆘 **كيفية استخدام البوت:**\n\n"
-        "1️⃣ أرسل رابط الفيديو مباشرة\n"
-        "2️⃣ انتظر حتى يتم التحميل\n"
-        "3️⃣ استلم الفيديو في نفس الدردشة\n\n"
-        "📝 **مثال:**\n"
-        "`https://www.youtube.com/watch?v=...`\n\n"
-        "⚠️ **ملاحظات مهمة:**\n"
-        "• الحد الأقصى لحجم الفيديو: 50 ميجابايت\n"
-        "• الفيديوهات الأطول قد تستغرق وقتاً أطول\n"
-        "• تأكد من أن الفيديو عام وليس خاص\n\n"
-        "📊 **لمعرفة حالة البوت:** /status"
-    )
-    await update.message.reply_text(help_msg, parse_mode='Markdown')
+# ============= دوال مساعدة =============
 
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """حالة البوت"""
-    status_msg = (
-        "📊 **حالة البوت:**\n\n"
-        "✅ **الحالة:** يعمل\n"
-        f"📁 **المجلد المؤقت:** {DOWNLOAD_FOLDER}\n"
-        f"🌐 **المنصات المدعومة:** {len(SUPPORTED_SITES)} منصة\n"
-        f"⚡ **الإصدار:** 2.0 (مطور)\n\n"
-        "🚀 **جاهز لاستقبال الروابط!**"
-    )
-    await update.message.reply_text(status_msg, parse_mode='Markdown')
+def format_number(num):
+    if num >= 1000000:
+        return f"{num/1000000:.1f}M"
+    if num >= 1000:
+        return f"{num/1000:.1f}K"
+    return str(num)
 
-def is_supported_url(url):
-    """التحقق من أن الرابط مدعوم"""
-    parsed_url = urlparse(url)
-    domain = parsed_url.netloc.lower()
-    
-    # إزالة www.
-    if domain.startswith('www.'):
-        domain = domain[4:]
-    
-    # التحقق من النطاق
-    for site in SUPPORTED_SITES:
-        if site in domain:
-            return True
-    
-    # إذا كان الرابط قصير (bit.ly, etc) نسمح به
-    if any(shortener in domain for shortener in ['bit.ly', 'tinyurl', 'shorturl']):
-        return True
-    
-    return False
+def format_duration(seconds):
+    if not seconds:
+        return "00:00"
+    minutes = seconds // 60
+    seconds = seconds % 60
+    hours = minutes // 60
+    if hours > 0:
+        minutes = minutes % 60
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
 
-async def download_video(url, progress_msg=None):
-    """تحميل الفيديو مع محاولات متعددة"""
-    
-    async def update_progress(text):
-        if progress_msg:
-            try:
-                await progress_msg.edit_text(text)
-            except:
-                pass
-    
+async def download_thumbnail(url: str, video_id: str) -> str:
+    try:
+        if not url:
+            return None
+        filename = os.path.join(THUMBNAIL_FOLDER, f"{video_id}.jpg")
+        urllib.request.urlretrieve(url, filename)
+        if os.path.exists(filename):
+            return filename
+    except Exception as e:
+        logger.error(f"خطأ في تحميل الصورة: {e}")
+    return None
+
+async def get_video_info(url):
     try:
         loop = asyncio.get_event_loop()
         
-        def try_download_with_options(options):
-            """محاولة التحميل بخيارات محددة"""
+        def get_info():
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                return ydl.extract_info(url, download=False)
+        
+        info = await loop.run_in_executor(None, get_info)
+        
+        if info:
+            return {
+                'title': info.get('title', 'بدون عنوان'),
+                'duration': info.get('duration', 0),
+                'uploader': info.get('uploader', 'غير معروف'),
+                'views': info.get('view_count', 0),
+                'likes': info.get('like_count', 0),
+                'thumbnail': info.get('thumbnail', ''),
+                'url': url,
+            }
+        return None
+    except Exception as e:
+        logger.error(f"خطأ في جلب المعلومات: {e}")
+        return None
+
+async def download_youtube_media(url, download_type='video'):
+    try:
+        loop = asyncio.get_event_loop()
+        
+        def download_sync():
             try:
-                # دمج الخيارات مع الإعدادات الأساسية
-                download_options = YDL_OPTIONS.copy()
-                download_options.update(options)
+                options = YDL_OPTIONS.copy()
                 
-                with yt_dlp.YoutubeDL(download_options) as ydl:
-                    logger.info(f"محاولة التحميل بالخيارات: {options}")
-                    
-                    # استخراج المعلومات أولاً
-                    info = ydl.extract_info(url, download=False)
-                    
-                    if info is None:
-                        return None, "لا يمكن استخراج معلومات الفيديو"
-                    
-                    # التحقق من حجم الفيديو
-                    filesize = None
-                    if 'filesize' in info and info['filesize']:
-                        filesize = info['filesize'] / (1024 * 1024)
-                    elif 'filesize_approx' in info and info['filesize_approx']:
-                        filesize = info['filesize_approx'] / (1024 * 1024)
-                    
-                    if filesize and filesize > 50:
-                        return None, f"حجم الفيديو كبير جداً ({filesize:.1f} MB)"
-                    
-                    # تحميل الفيديو
+                if download_type in YOUTUBE_DOWNLOAD_OPTIONS:
+                    opt = YOUTUBE_DOWNLOAD_OPTIONS[download_type]
+                    options['format'] = opt['format']
+                    if 'postprocessors' in opt:
+                        options['postprocessors'] = opt['postprocessors']
+                        if opt['type'] in ['audio', 'voice']:
+                            ext = 'mp3' if opt['type'] == 'audio' else 'ogg'
+                            options['outtmpl'] = os.path.join(DOWNLOAD_FOLDER, '%(title)s_%(id)s.' + ext)
+                
+                with yt_dlp.YoutubeDL(options) as ydl:
                     info = ydl.extract_info(url, download=True)
                     
-                    # البحث عن الملف المحمل
+                    # البحث عن الملف
                     filename = None
-                    
-                    # الطريقة 1: من requested_downloads
                     if 'requested_downloads' in info and info['requested_downloads']:
                         for download in info['requested_downloads']:
                             if 'filepath' in download:
                                 filename = download['filepath']
                                 break
                     
-                    # الطريقة 2: prepare_filename
+                    if not filename or not os.path.exists(filename):
+                        test_filename = ydl.prepare_filename(info)
+                        if download_type in ['audio', 'voice']:
+                            ext = 'mp3' if download_type == 'audio' else 'ogg'
+                            test_filename = test_filename.rsplit('.', 1)[0] + '.' + ext
+                        if os.path.exists(test_filename):
+                            filename = test_filename
+                    
+                    if not filename or not os.path.exists(filename):
+                        files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
+                        if files:
+                            filename = max(files, key=os.path.getctime)
+                    
+                    if filename and os.path.exists(filename):
+                        return filename, info
+                    return None, None
+                    
+            except Exception as e:
+                logger.error(f"خطأ في التحميل: {e}")
+                return None, None
+        
+        result, info = await loop.run_in_executor(None, download_sync)
+        return result, info
+        
+    except Exception as e:
+        logger.error(f"خطأ عام: {e}")
+        return None, None
+
+async def download_direct_video(url):
+    try:
+        loop = asyncio.get_event_loop()
+        
+        def download_sync():
+            try:
+                with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    filename = None
+                    if 'requested_downloads' in info and info['requested_downloads']:
+                        for download in info['requested_downloads']:
+                            if 'filepath' in download:
+                                filename = download['filepath']
+                                break
+                    
                     if not filename or not os.path.exists(filename):
                         test_filename = ydl.prepare_filename(info)
                         if os.path.exists(test_filename):
                             filename = test_filename
                     
-                    # الطريقة 3: البحث في المجلد
                     if not filename or not os.path.exists(filename):
-                        import glob
-                        import time
-                        
-                        # ابحث عن أحدث ملف
-                        current_time = time.time()
                         files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
-                        
-                        # ابحث عن ملف تم إنشاؤه في آخر 30 ثانية
-                        recent_files = [f for f in files if os.path.getctime(f) > current_time - 30]
-                        
-                        if recent_files:
-                            filename = max(recent_files, key=os.path.getctime)
+                        if files:
+                            filename = max(files, key=os.path.getctime)
                     
-                    if filename and os.path.exists(filename):
-                        return filename, None
-                    else:
-                        return None, "لم يتم العثور على الملف المحمل"
-                    
+                    return filename
             except Exception as e:
-                return None, str(e)
+                logger.error(f"خطأ: {e}")
+                return None
         
-        # المحاولة الأولى: الإعدادات الافتراضية
-        await update_progress("⏳ جاري تحميل الفيديو... (محاولة 1/4)")
-        filename, error = await loop.run_in_executor(None, try_download_with_options, {})
-        
-        if filename:
-            return filename
-        
-        # المحاولة الثانية: جودة أقل
-        await update_progress("⏳ جاري تحميل الفيديو... (محاولة 2/4)")
-        filename, error = await loop.run_in_executor(None, try_download_with_options, FALLBACK_OPTIONS[0])
-        
-        if filename:
-            return filename
-        
-        # المحاولة الثالثة: جودة منخفضة
-        await update_progress("⏳ جاري تحميل الفيديو... (محاولة 3/4)")
-        filename, error = await loop.run_in_executor(None, try_download_with_options, FALLBACK_OPTIONS[1])
-        
-        if filename:
-            return filename
-        
-        # المحاولة الرابعة: أسوأ جودة
-        await update_progress("⏳ جاري تحميل الفيديو... (محاولة 4/4)")
-        filename, error = await loop.run_in_executor(None, try_download_with_options, FALLBACK_OPTIONS[2])
-        
-        if filename:
-            return filename
-        
-        logger.error(f"جميع المحاولات فشلت: {error}")
-        return None
+        return await loop.run_in_executor(None, download_sync)
         
     except Exception as e:
-        logger.error(f"خطأ عام في التحميل: {str(e)}")
+        logger.error(f"خطأ عام: {e}")
         return None
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الرسائل"""
-    url = update.message.text.strip()
+# ============= البحث في يوتيوب =============
+
+async def search_youtube(query: str, limit: int = 5):
+    try:
+        search_query = f"ytsearch{limit}:{query}"
+        loop = asyncio.get_event_loop()
+        
+        def search_sync():
+            with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True}) as ydl:
+                info = ydl.extract_info(search_query, download=False)
+                videos = []
+                if info and 'entries' in info:
+                    for entry in info['entries']:
+                        if entry:
+                            video_id = entry.get('id', '')
+                            if video_id:
+                                videos.append({
+                                    'id': video_id,
+                                    'title': entry.get('title', 'بدون عنوان')[:80],
+                                    'url': f"https://youtube.com/watch?v={video_id}",
+                                    'duration': entry.get('duration', 0),
+                                    'uploader': entry.get('uploader', 'غير معروف')[:30],
+                                    'views': entry.get('view_count', 0),
+                                    'thumbnail': entry.get('thumbnail', '')
+                                })
+                return videos
+        
+        return await loop.run_in_executor(None, search_sync)
+        
+    except Exception as e:
+        logger.error(f"خطأ في البحث: {e}")
+        return []
+
+# ============= الأوامر الأساسية =============
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_msg = (
+        "🎥 **مرحباً بك في بوت تحميل الفيديوهات!**\n\n"
+        "📥 **طريقة الاستخدام:**\n\n"
+        "**1️⃣ تحميل مباشر:**\n"
+        "أرسل رابط من أي منصة وسأقوم بتحميل الفيديو فوراً\n"
+        "• انستقرام - تيك توك - فيسبوك - بنترست - تويتر\n\n"
+        "**2️⃣ تحميل من يوتيوب:**\n"
+        "أرسل رابط يوتيوب، سأرسل لك:\n"
+        "• صورة الفيديو مع معلومات\n"
+        "• 3 خيارات: فيديو - MP3 - بصمة صوتية\n\n"
+        "**3️⃣ البحث في يوتيوب:**\n"
+        "اكتب أي كلمة للبحث (مثل: 'أغاني حزينة')\n"
+        "ستظهر نتائج مع صور ومعلومات\n\n"
+        "✨ **فقط أرسل الرابط أو كلمة البحث!**"
+    )
+    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_msg = (
+        "🆘 **دليل الاستخدام:**\n\n"
+        "**📱 تحميل مباشر:**\n"
+        "أرسل الرابط ← أستلم الفيديو\n\n"
+        "**🎬 تحميل من يوتيوب:**\n"
+        "أرسل رابط يوتيوب ← صورة + 3 أزرار\n\n"
+        "**🔍 البحث في يوتيوب:**\n"
+        "أكتب كلمة ← نتائج مع صور وأزرار\n\n"
+        "**📊 الأوامر:**\n"
+        "/start - الصفحة الرئيسية\n"
+        "/help - المساعدة\n"
+        "/stats - الإحصائيات"
+    )
+    await update.message.reply_text(help_msg, parse_mode='Markdown')
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uptime = datetime.now() - download_stats['start_time']
+    hours = uptime.total_seconds() // 3600
+    minutes = (uptime.total_seconds() % 3600) // 60
     
-    # التحقق من الرابط
-    if not url.startswith(('http://', 'https://')):
-        await update.message.reply_text(
-            "❌ **رابط غير صحيح**\n\n"
-            "الرجاء إرسال رابط يبدأ بـ http:// أو https://",
-            parse_mode='Markdown'
-        )
-        return
+    stats_msg = (
+        "📊 **إحصائيات البوت:**\n\n"
+        f"✅ **الحالة:** يعمل\n"
+        f"📥 **التحميلات:** {download_stats['total_downloads']}\n"
+        f"🔍 **عمليات البحث:** {download_stats['total_searches']}\n"
+        f"⏱️ **وقت التشغيل:** {int(hours)} ساعة {int(minutes)} دقيقة\n"
+        f"🌐 **المنصات:** {len(SUPPORTED_SITES)}\n\n"
+        "🚀 **شكراً لاستخدامك البوت!**"
+    )
+    await update.message.reply_text(stats_msg, parse_mode='Markdown')
+
+def is_youtube_url(url):
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    return 'youtube.com' in domain or 'youtu.be' in domain
+
+def is_supported_url(url):
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+    if domain.startswith('www.'):
+        domain = domain[4:]
     
-    # التحقق من أن الرابط مدعوم
-    if not is_supported_url(url):
-        sites_list = "\n".join([f"• {site}" for site in SUPPORTED_SITES[:10]])
-        await update.message.reply_text(
-            f"⚠️ **الرابط غير مدعوم أو غير معروف**\n\n"
-            f"المنصات المدعومة:\n{sites_list}\n\n"
-            f"• وغيرها الكثير...\n\n"
-            f"تأكد من الرابط وحاول مرة أخرى",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # إرسال رسالة التحميل
+    for site in SUPPORTED_SITES:
+        if site in domain:
+            return True
+    return False
+
+# ============= معالج الروابط =============
+
+async def handle_youtube_url(update: Update, url: str):
     progress_msg = await update.message.reply_text(
-        "⏳ **جاري تحميل الفيديو...**\n"
-        "الرجاء الانتظار قليلاً",
+        "⏳ **جاري تحضير الفيديو...**",
         parse_mode='Markdown'
     )
     
     try:
-        logger.info(f"محاولة تحميل: {url}")
+        info = await get_video_info(url)
         
-        # تحميل الفيديو
-        video_path = await download_video(url, progress_msg)
+        if info:
+            thumb_path = None
+            if info['thumbnail']:
+                thumb_path = await download_thumbnail(info['thumbnail'], str(int(time.time())))
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"yt_video_{url}"),
+                    InlineKeyboardButton("🎵 ملف MP3", callback_data=f"yt_audio_{url}"),
+                    InlineKeyboardButton("🎤 بصمة صوتية", callback_data=f"yt_voice_{url}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            duration_str = format_duration(info['duration'])
+            views_str = format_number(info['views'])
+            
+            caption = (
+                f"🎬 **{info['title'][:100]}**\n\n"
+                f"👤 **{info['uploader']}**\n"
+                f"⏱️ **المدة:** {duration_str}\n"
+                f"👁️ **المشاهدات:** {views_str}\n"
+                f"❤️ **الإعجابات:** {format_number(info['likes'])}\n\n"
+                f"👁️ [لمشاهدة الفيديو اضغط هنا]({url})\n\n"
+                f"📥 **اختر نوع التحميل:**"
+            )
+            
+            await progress_msg.delete()
+            
+            if thumb_path and os.path.exists(thumb_path):
+                with open(thumb_path, 'rb') as thumb_file:
+                    await update.message.reply_photo(
+                        photo=thumb_file,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown'
+                    )
+                os.remove(thumb_path)
+            else:
+                await update.message.reply_text(
+                    caption,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+        else:
+            await progress_msg.edit_text("❌ **فشل في جلب معلومات الفيديو**", parse_mode='Markdown')
+            
+    except Exception as e:
+        logger.error(f"خطأ: {e}")
+        await progress_msg.edit_text(f"❌ **حدث خطأ**\n{str(e)[:100]}", parse_mode='Markdown')
+
+async def handle_direct_url(update: Update, url: str):
+    progress_msg = await update.message.reply_text(
+        "⏳ **جاري تحميل الفيديو...**",
+        parse_mode='Markdown'
+    )
+    
+    try:
+        video_path = await download_direct_video(url)
         
         if video_path and os.path.exists(video_path):
             file_size = os.path.getsize(video_path) / (1024 * 1024)
             
-            # التحقق من حجم الملف
             if file_size > 50:
-                await progress_msg.edit_text(
-                    f"❌ **الفيديو كبير جداً**\n\n"
-                    f"الحجم: {file_size:.1f} MB\n"
-                    f"الحد الأقصى: 50 MB\n\n"
-                    f"جرب رابط آخر بجودة أقل",
-                    parse_mode='Markdown'
-                )
+                await progress_msg.edit_text(f"❌ **الفيديو كبير جداً**\nالحجم: {file_size:.1f} MB", parse_mode='Markdown')
                 os.remove(video_path)
                 return
             
-            # حذف رسالة التقدم
             await progress_msg.delete()
             
-            # إرسال الفيديو
             with open(video_path, 'rb') as video_file:
                 await update.message.reply_video(
                     video=video_file,
-                    caption=(
-                        f"✅ **تم التحميل بنجاح!**\n\n"
-                        f"📊 **الحجم:** {file_size:.1f} MB\n"
-                        f"📹 **جودة:** 720p (محسّنة)\n"
-                        f"🤖 **بوت تحميل الفيديوهات**"
-                    ),
-                    supports_streaming=True,
-                    parse_mode='Markdown'
+                    caption=f"✅ **تم التحميل بنجاح!**\n📊 الحجم: {file_size:.1f} MB",
+                    supports_streaming=True
                 )
             
-            # حذف الفيديو بعد الإرسال
             os.remove(video_path)
-            logger.info(f"✅ تم حذف الملف: {video_path}")
+            download_stats['total_downloads'] += 1
             
         else:
             await progress_msg.edit_text(
-                "❌ **فشل التحميل**\n\n"
-                "الأسباب المحتملة:\n"
-                "• الرابط غير صحيح\n"
-                "• الفيديو خاص أو محمي\n"
-                "• الفيديو طويل جداً\n"
-                "• مشكلة في المنصة\n\n"
-                "**حلول:**\n"
-                "• تأكد من الرابط\n"
-                "• جرب رابط آخر\n"
-                "• أعد المحاولة لاحقاً",
+                "❌ **فشل التحميل**\nتأكد من الرابط وحاول مرة أخرى",
                 parse_mode='Markdown'
             )
             
     except Exception as e:
-        logger.error(f"خطأ في التحميل: {str(e)}")
-        await progress_msg.edit_text(
-            f"❌ **حدث خطأ غير متوقع**\n\n"
-            f"الخطأ: {str(e)[:100]}\n\n"
-            f"الرجاء المحاولة مرة أخرى",
-            parse_mode='Markdown'
-        )
+        logger.error(f"خطأ: {e}")
+        await progress_msg.edit_text(f"❌ **حدث خطأ**\n{str(e)[:100]}", parse_mode='Markdown')
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الأخطاء"""
-    logger.error(f"حدث خطأ: {context.error}")
+# ============= البحث =============
+
+async def handle_search(update: Update, query: str):
+    download_stats['total_searches'] += 1
+    
+    progress_msg = await update.message.reply_text(
+        f"🔍 **جاري البحث عن:** {query}",
+        parse_mode='Markdown'
+    )
     
     try:
-        if update and update.message:
+        videos = await search_youtube(query, limit=5)
+        
+        if videos:
+            await progress_msg.delete()
+            
+            for i, video in enumerate(videos, 1):
+                thumb_path = None
+                if video['thumbnail']:
+                    thumb_path = await download_thumbnail(video['thumbnail'], f"search_{i}_{int(time.time())}")
+                
+                duration_str = format_duration(video['duration'])
+                views_str = format_number(video['views'])
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("🎬 فيديو", callback_data=f"yt_video_{video['url']}"),
+                        InlineKeyboardButton("🎵 MP3", callback_data=f"yt_audio_{video['url']}"),
+                        InlineKeyboardButton("🎤 بصمة", callback_data=f"yt_voice_{video['url']}")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                caption = (
+                    f"{i}. **{video['title']}**\n"
+                    f"👤 {video['uploader']} | ⏱️ {duration_str} | 👁️ {views_str}\n\n"
+                    f"[👁️ مشاهدة الفيديو]({video['url']})"
+                )
+                
+                if thumb_path and os.path.exists(thumb_path):
+                    with open(thumb_path, 'rb') as thumb_file:
+                        await update.message.reply_photo(
+                            photo=thumb_file,
+                            caption=caption,
+                            reply_markup=reply_markup,
+                            parse_mode='Markdown'
+                        )
+                    os.remove(thumb_path)
+                else:
+                    await update.message.reply_text(
+                        caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown'
+                    )
+        else:
+            await progress_msg.edit_text("❌ **لا توجد نتائج**\nجرب كلمات أخرى", parse_mode='Markdown')
+            
+    except Exception as e:
+        logger.error(f"خطأ في البحث: {e}")
+        await progress_msg.edit_text(f"❌ **حدث خطأ**\n{str(e)[:100]}", parse_mode='Markdown')
+
+# ============= معالج الأزرار =============
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data.startswith('yt_'):
+        parts = data.split('_', 2)
+        dl_type = parts[1]
+        url = parts[2]
+        
+        await query.edit_message_caption(
+            caption=f"⏳ **جاري التحميل...**\n{YOUTUBE_DOWNLOAD_OPTIONS[dl_type]['name']}"
+        )
+        
+        try:
+            file_path, info = await download_youtube_media(url, dl_type)
+            
+            if file_path and os.path.exists(file_path):
+                file_size = os.path.getsize(file_path) / (1024 * 1024)
+                
+                with open(file_path, 'rb') as file:
+                    if dl_type == 'video':
+                        await query.message.reply_video(
+                            video=file,
+                            caption=f"✅ **تم التحميل!**\n📊 {file_size:.1f} MB",
+                            supports_streaming=True
+                        )
+                    elif dl_type == 'voice':
+                        await query.message.reply_voice(
+                            voice=file,
+                            caption=f"✅ **بصمة صوتية**\n📊 {file_size:.1f} MB"
+                        )
+                    elif dl_type == 'audio':
+                        await query.message.reply_audio(
+                            audio=file,
+                            caption=f"✅ **ملف MP3**\n📊 {file_size:.1f} MB"
+                        )
+                
+                os.remove(file_path)
+                download_stats['total_downloads'] += 1
+                
+                await query.edit_message_caption(
+                    caption=query.message.caption_html,
+                    parse_mode='HTML'
+                )
+            else:
+                await query.edit_message_caption(caption="❌ **فشل التحميل**\nحاول مرة أخرى")
+                
+        except Exception as e:
+            logger.error(f"خطأ: {e}")
+            await query.edit_message_caption(caption=f"❌ **خطأ:** {str(e)[:100]}")
+
+# ============= المعالج الرئيسي =============
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    
+    if text.startswith(('http://', 'https://')):
+        if not is_supported_url(text):
             await update.message.reply_text(
-                "❌ **حدث خطأ في البوت**\n\n"
-                "تم تسجيل الخطأ وسيتم إصلاحه قريباً\n"
-                "الرجاء المحاولة مرة أخرى",
+                "⚠️ **الرابط غير مدعوم**\nالمنصات المدعومة: يوتيوب، تيك توك، انستقرام، فيسبوك، بنترست، تويتر",
                 parse_mode='Markdown'
             )
-    except:
-        pass
+            return
+        
+        if is_youtube_url(text):
+            await handle_youtube_url(update, text)
+        else:
+            await handle_direct_url(update, text)
+    else:
+        if len(text) > 2:
+            await handle_search(update, text)
+        else:
+            await update.message.reply_text(
+                "❌ **كلمة البحث قصيرة جداً**\nالرجاء كتابة كلمة أطول من حرفين",
+                parse_mode='Markdown'
+            )
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"حدث خطأ: {context.error}")
 
 def cleanup():
-    """تنظيف الملفات المؤقتة عند الإغلاق"""
     try:
         shutil.rmtree(DOWNLOAD_FOLDER)
         logger.info("✅ تم تنظيف الملفات المؤقتة")
-    except Exception as e:
-        logger.error(f"خطأ في التنظيف: {e}")
+    except:
+        pass
 
 def main():
-    """تشغيل البوت"""
-    logger.info("🚀 بدء تشغيل البوت المتطور...")
+    logger.info("🚀 بدء تشغيل البوت...")
     
     try:
-        # إنشاء التطبيق
         application = Application.builder().token(TOKEN).build()
         
-        # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("stats", stats_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        
-        # إضافة معالج الأخطاء
+        application.add_handler(CallbackQueryHandler(button_handler))
         application.add_error_handler(error_handler)
         
-        # تشغيل البوت
-        logger.info("✅ البوت المتطور جاهز للعمل!")
-        print("\n" + "="*50)
-        print("🤖 البوت المتطور يعمل الآن!")
-        print("📝 توكن:", TOKEN[:15] + "...")
-        print("📁 مجلد التحميلات:", DOWNLOAD_FOLDER)
-        print("✅ جاهز لاستقبال الروابط")
-        print("="*50 + "\n")
+        print("\n" + "="*60)
+        print("🤖 البوت يعمل الآن!".center(60))
+        print("="*60)
+        print(f"📝 توكن: {TOKEN[:15]}...")
+        print(f"📁 المجلد: {DOWNLOAD_FOLDER}")
+        print(f"🌐 المنصات: {len(SUPPORTED_SITES)}")
+        print("="*60)
+        print("🎬 يوتيوب: صورة + 3 أزرار")
+        print("📱 منصات أخرى: تحميل مباشر")
+        print("🔍 بحث متطور في يوتيوب")
+        print("="*60 + "\n")
         
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
-        logger.error(f"خطأ في تشغيل البوت: {str(e)}")
+        logger.error(f"خطأ: {e}")
     finally:
         cleanup()
 
