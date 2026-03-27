@@ -12,6 +12,7 @@ import shutil
 import re
 import time
 from urllib.parse import urlparse
+from datetime import datetime  # <-- هذا السطر كان ناقصاً
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -29,7 +30,7 @@ THUMBNAIL_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'thumbnails')
 os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
 logger.info(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
 
-# قائمة المنصات المدعومة (التحميل المباشر)
+# قائمة المنصات المدعومة
 SUPPORTED_SITES = [
     "youtube.com", "youtu.be",
     "tiktok.com",
@@ -768,5 +769,4 @@ def main():
         cleanup()
 
 if __name__ == '__main__':
-    from datetime import datetime
     main()
