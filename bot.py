@@ -11,13 +11,7 @@ import tempfile
 import shutil
 import re
 import time
-import json
-from urllib.parse import urlparse, quote, urlencode
-from datetime import datetime, timedelta
-import html
-import random
-
-# ============= الكود الأصلي بالكامل (نفس الصيغة) =============
+from urllib.parse import urlparse
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -32,13 +26,10 @@ TOKEN = os.environ.get("TOKEN", "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"
 # مجلد مؤقت للتحميلات
 DOWNLOAD_FOLDER = tempfile.mkdtemp()
 THUMBNAIL_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'thumbnails')
-SEARCH_CACHE_FOLDER = os.path.join(DOWNLOAD_FOLDER, 'search_cache')
 os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
-os.makedirs(SEARCH_CACHE_FOLDER, exist_ok=True)
 logger.info(f"📁 مجلد التحميلات: {DOWNLOAD_FOLDER}")
 
-# ============= قائمة المنصات الأصلية (بدون تغيير) =============
-
+# قائمة المنصات المدعومة (التحميل المباشر)
 SUPPORTED_SITES = [
     "youtube.com", "youtu.be",
     "tiktok.com",
@@ -57,31 +48,7 @@ SUPPORTED_SITES = [
     "whatsapp.com"
 ]
 
-# إضافة منصات جديدة (مع الحفاظ على القائمة)
-EXTRA_SITES = [
-    "snapchat.com",
-    "discord.com",
-    "spotify.com",
-    "soundcloud.com",
-    "rumble.com",
-    "odysee.com",
-    "bitchute.com",
-    "lbry.tv",
-    "kick.com",
-    "threads.net",
-    "bsky.app",
-    "mastodon.social",
-    "tiktok.com/@",
-    "youtube.com/shorts",
-    "instagram.com/reel",
-    "facebook.com/watch",
-    "twitter.com/i/status",
-]
-
-ALL_SUPPORTED_SITES = SUPPORTED_SITES + EXTRA_SITES
-
-# ============= إعدادات yt-dlp الأصلية =============
-
+# إعدادات yt-dlp المحسّنة
 YDL_OPTIONS = {
     'format': 'best[height<=720][filesize<50M]',
     'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s_%(id)s.%(ext)s'),
@@ -96,240 +63,54 @@ YDL_OPTIONS = {
     'file_access_retries': 3,
     'extractor_retries': 3,
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 }
 
-# خيارات بديلة
+# خيارات بديلة للتحميل
 FALLBACK_OPTIONS = [
     {'format': 'best[height<=480]'},
     {'format': 'best[height<=360]'},
     {'format': 'worst'},
 ]
 
-# ============= خيارات التحميل المتقدمة =============
-
-DOWNLOAD_OPTIONS = {
+# خيارات التحميل ليوتيوب فقط
+YOUTUBE_DOWNLOAD_OPTIONS = {
     'video': {
         'name': '🎬 تحميل فيديو',
-        'format': 'best[height<=1080][filesize<50M]',
-        'type': 'video',
-        'emoji': '🎬'
-    },
-    'voice': {
-        'name': '🎤 بصمة صوتية',
-        'format': 'bestaudio/best',
-        'type': 'voice',
-        'emoji': '🎤',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'ogg',
-            'preferredquality': '64',
-        }]
+        'format': 'best[height<=720][filesize<50M]',
+        'type': 'video'
     },
     'audio': {
-        'name': '🎵 ملف MP3',
+        'name': '🎵 ملف صوتي MP3',
         'format': 'bestaudio/best',
         'type': 'audio',
-        'emoji': '🎵',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
+    },
+    'voice': {
+        'name': '🎤 بصمة صوتية',
+        'format': 'bestaudio/best',
+        'type': 'voice',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'ogg',
+            'preferredquality': '64',
+        }]
     }
 }
 
-# ============= تحسينات البحث المتقدمة =============
-
-SEARCH_ENGINES = {
-    'youtube': {
-        'name': '📺 يوتيوب',
-        'emoji': '📺',
-        'color': '🔴',
-        'url': 'https://www.youtube.com/results?search_query={}'
-    },
-    'tiktok': {
-        'name': '🎵 تيك توك',
-        'emoji': '🎵',
-        'color': '⚫',
-        'url': 'https://www.tiktok.com/search?q={}'
-    },
-    'instagram': {
-        'name': '📸 انستغرام',
-        'emoji': '📸',
-        'color': '🟣',
-        'url': 'https://www.instagram.com/explore/tags/{}/'
-    },
-    'twitter': {
-        'name': '🐦 تويتر',
-        'emoji': '🐦',
-        'color': '🔵',
-        'url': 'https://twitter.com/search?q={}'
-    },
-    'pinterest': {
-        'name': '📌 بنترست',
-        'emoji': '📌',
-        'color': '🔴',
-        'url': 'https://www.pinterest.com/search/pins/?q={}'
-    },
-    'reddit': {
-        'name': '👽 ريديت',
-        'emoji': '👽',
-        'color': '🟠',
-        'url': 'https://www.reddit.com/search/?q={}'
-    }
-}
-
-# خيارات البحث المتقدم
-SEARCH_FILTERS = {
-    'today': 'اليوم',
-    'week': 'هذا الأسبوع',
-    'month': 'هذا الشهر',
-    'year': 'هذه السنة',
-    'long': '+10 دقائق',
-    'short': '-4 دقائق',
-    'hd': 'جودة عالية'
-}
-
-user_sessions = {}
+# إحصائيات
 download_stats = {
     'total_downloads': 0,
-    'total_users': 0,
     'total_searches': 0,
     'start_time': datetime.now()
 }
 
-# ============= دوال البحث المحسنة =============
-
-async def search_videos_advanced(query: str, engine: str = 'youtube', limit: int = 8):
-    """بحث متقدم عن الفيديوهات"""
-    try:
-        # بناء استعلام البحث
-        if engine == 'youtube':
-            search_query = f"ytsearch{limit}:{query}"
-        elif engine == 'tiktok':
-            search_query = f"tiktok:{query}"
-        elif engine == 'instagram':
-            search_query = f"instagram:{query}"
-        else:
-            search_query = f"ytsearch{limit}:{query}"
-        
-        with yt_dlp.YoutubeDL({
-            'quiet': True, 
-            'extract_flat': True,
-            'ignoreerrors': True
-        }) as ydl:
-            info = ydl.extract_info(search_query, download=False)
-            
-            videos = []
-            if info and 'entries' in info:
-                for entry in info['entries']:
-                    if entry:
-                        video_id = entry.get('id', '')
-                        video_url = f"https://youtube.com/watch?v={video_id}" if engine == 'youtube' else entry.get('webpage_url', '')
-                        
-                        videos.append({
-                            'id': video_id,
-                            'title': entry.get('title', 'بدون عنوان')[:80],
-                            'url': video_url,
-                            'duration': entry.get('duration', 0),
-                            'uploader': entry.get('uploader', 'غير معروف')[:30],
-                            'views': entry.get('view_count', 0),
-                            'thumbnail': entry.get('thumbnail', ''),
-                            'engine': engine,
-                            'engine_name': SEARCH_ENGINES[engine]['name'],
-                            'engine_emoji': SEARCH_ENGINES[engine]['emoji'],
-                            'published': entry.get('upload_date', ''),
-                            'description': entry.get('description', '')[:100]
-                        })
-            
-            # ترتيب النتائج حسب المشاهدات
-            videos.sort(key=lambda x: x['views'], reverse=True)
-            return videos
-            
-    except Exception as e:
-        logger.error(f"خطأ في البحث المتقدم: {e}")
-        return []
-
-async def search_multi_engine(query: str):
-    """البحث في عدة منصات"""
-    results = {}
-    tasks = []
-    
-    for engine in ['youtube', 'tiktok', 'instagram']:
-        task = search_videos_advanced(query, engine, limit=3)
-        tasks.append(task)
-    
-    engine_results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for i, engine in enumerate(['youtube', 'tiktok', 'instagram']):
-        if i < len(engine_results) and not isinstance(engine_results[i], Exception):
-            results[engine] = engine_results[i]
-    
-    return results
-
-async def get_trending_videos(category: str = 'music'):
-    """الحصول على الفيديوهات الرائجة"""
-    try:
-        trending_queries = {
-            'music': 'ytsearch10:أحدث الأغاني',
-            'comedy': 'ytsearch10:مقاطع مضحكة',
-            'sports': 'ytsearch10:أهداف مباريات',
-            'news': 'ytsearch10:أخبار اليوم',
-            'gaming': 'ytsearch10:ألعاب جديدة',
-        }
-        
-        query = trending_queries.get(category, trending_queries['music'])
-        
-        with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True}) as ydl:
-            info = ydl.extract_info(query, download=False)
-            
-            videos = []
-            if info and 'entries' in info:
-                for entry in info['entries'][:5]:
-                    if entry:
-                        videos.append({
-                            'title': entry.get('title', 'بدون عنوان')[:60],
-                            'url': f"https://youtube.com/watch?v={entry.get('id', '')}",
-                            'uploader': entry.get('uploader', 'غير معروف')[:30],
-                            'thumbnail': entry.get('thumbnail', '')
-                        })
-            return videos
-    except Exception as e:
-        logger.error(f"خطأ في جلب الرائج: {e}")
-        return []
-
-async def download_thumbnail(url: str, video_id: str) -> str:
-    """تحميل الصورة المصغرة"""
-    try:
-        if not url:
-            return None
-            
-        filename = os.path.join(THUMBNAIL_FOLDER, f"{video_id}.jpg")
-        
-        # استخدام yt-dlp لتحميل الصورة
-        try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if info and 'thumbnail' in info:
-                    import urllib.request
-                    urllib.request.urlretrieve(info['thumbnail'], filename)
-                    if os.path.exists(filename):
-                        return filename
-        except:
-            pass
-            
-        # محاولة بديلة
-        if url.startswith(('http://', 'https://')):
-            import urllib.request
-            urllib.request.urlretrieve(url, filename)
-            if os.path.exists(filename):
-                return filename
-                
-    except Exception as e:
-        logger.error(f"خطأ في تحميل الصورة: {e}")
-    return None
+# ============= دوال مساعدة =============
 
 def format_number(num):
     """تنسيق الأرقام"""
@@ -351,180 +132,19 @@ def format_duration(seconds):
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes}:{seconds:02d}"
 
-# ============= الدوال الأصلية (نفس الصيغة) =============
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """رسالة الترحيب المحسنة"""
-    user = update.effective_user
-    welcome_msg = (
-        f"🎥 **مرحباً {user.first_name}!**\n\n"
-        "أنا **البوت الذهبي** لتحميل الفيديوهات ✨\n\n"
-        "📥 **أرسل لي:**\n"
-        "• رابط فيديو للتحميل\n"
-        "• كلمة للبحث (مثل: 'موسيقى')\n\n"
-        "🔍 **ميزات البحث:**\n"
-        "• بحث في يوتيوب - تيك توك - انستغرام\n"
-        "• نتائج مرتبة حسب المشاهدات\n"
-        "• صور مصغرة ومعلومات كاملة\n"
-        "• فلترة حسب التاريخ والجودة\n\n"
-        "⚡ **التحميل:**\n"
-        "• فيديو بأعلى جودة\n"
-        "• بصمة صوتية\n"
-        "• ملف MP3\n\n"
-        "🌟 **استمتع بتجربة فريدة!**"
-    )
-    
-    # أزرار تفاعلية محسنة
-    keyboard = [
-        [
-            InlineKeyboardButton("📊 الإحصائيات", callback_data="stats"),
-            InlineKeyboardButton("❓ المساعدة", callback_data="help")
-        ],
-        [
-            InlineKeyboardButton("🔍 بحث متقدم", callback_data="search_menu"),
-            InlineKeyboardButton("📈 الأكثر مشاهدة", callback_data="trending")
-        ],
-        [
-            InlineKeyboardButton("🌐 جميع المنصات", callback_data="all_platforms"),
-            InlineKeyboardButton("⚡ تحميل سريع", callback_data="quick_download")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(welcome_msg, parse_mode='Markdown', reply_markup=reply_markup)
-    download_stats['total_users'] += 1
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مساعدة محسنة"""
-    help_msg = (
-        "🆘 **دليل استخدام البوت:**\n\n"
-        "**1️⃣ تحميل فيديو:**\n"
-        "• أرسل الرابط مباشرة\n"
-        "• اختر نوع التحميل:\n"
-        "  🎬 فيديو - أعلى جودة\n"
-        "  🎤 بصمة صوتية - رسالة صوتية\n"
-        "  🎵 MP3 - ملف صوتي\n\n"
-        "**2️⃣ البحث:**\n"
-        "• اكتب كلمة مفتاحية\n"
-        "• اختر منصة البحث\n"
-        "• استخدم الفلاتر:\n"
-        "  📅 اليوم - هذا الأسبوع - هذا الشهر\n"
-        "  🎥 جودة عالية - مدة طويلة\n\n"
-        "**3️⃣ الأوامر:**\n"
-        "/start - الصفحة الرئيسية\n"
-        "/stats - الإحصائيات\n"
-        "/search [كلمة] - بحث سريع\n"
-        "/trending - الأكثر مشاهدة\n"
-        "/popular - الأكثر رواجاً\n\n"
-        "**4️⃣ نصائح:**\n"
-        "• للبحث عن موسيقى: 'أغاني حزينة'\n"
-        "• للأفلام: 'أفلام كرتون'\n"
-        "• للمباريات: 'أهداف مباراة'\n"
-        "• للكوميديا: 'مقاطع مضحكة'"
-    )
-    await update.message.reply_text(help_msg, parse_mode='Markdown')
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إحصائيات محسنة"""
-    uptime = datetime.now() - download_stats['start_time']
-    hours = uptime.total_seconds() // 3600
-    minutes = (uptime.total_seconds() % 3600) // 60
-    
-    # حساب المساحة
-    total_size = 0
-    for root, dirs, files in os.walk(DOWNLOAD_FOLDER):
-        for file in files:
-            total_size += os.path.getsize(os.path.join(root, file))
-    total_size_mb = total_size / (1024 * 1024)
-    
-    stats_msg = (
-        "📊 **إحصائيات البوت الذهبي:**\n\n"
-        f"✅ **الحالة:** يعمل بكفاءة\n"
-        f"⏱️ **وقت التشغيل:** {int(hours)} ساعة {int(minutes)} دقيقة\n"
-        f"📥 **إجمالي التحميلات:** {download_stats['total_downloads']}\n"
-        f"🔍 **إجمالي عمليات البحث:** {download_stats['total_searches']}\n"
-        f"👥 **المستخدمين:** {download_stats['total_users']}\n"
-        f"🌐 **المنصات المدعومة:** {len(ALL_SUPPORTED_SITES)}\n"
-        f"📁 **المساحة المستخدمة:** {total_size_mb:.1f} MB\n"
-        f"⚡ **الإصدار:** 5.0 (النسخة الذهبية)\n\n"
-        "🚀 **شكراً لثقتك بالبوت!**"
-    )
-    await update.message.reply_text(stats_msg, parse_mode='Markdown')
-
-def is_supported_url(url):
-    """التحقق من الرابط"""
-    parsed_url = urlparse(url)
-    domain = parsed_url.netloc.lower()
-    
-    if domain.startswith('www.'):
-        domain = domain[4:]
-    
-    for site in ALL_SUPPORTED_SITES:
-        if site in domain:
-            return True
-    
-    shorteners = ['bit.ly', 'tinyurl', 'shorturl', 'ow.ly', 'is.gd', 'youtu.be']
-    if any(shortener in domain for shortener in shorteners):
-        return True
-    
-    return False
-
-async def download_media(url, download_type='video'):
-    """تحميل الوسائط"""
+async def download_thumbnail(url: str, video_id: str) -> str:
+    """تحميل الصورة المصغرة"""
     try:
-        loop = asyncio.get_event_loop()
-        
-        def download_sync():
-            try:
-                options = YDL_OPTIONS.copy()
-                
-                if download_type in DOWNLOAD_OPTIONS:
-                    opt = DOWNLOAD_OPTIONS[download_type]
-                    options['format'] = opt['format']
-                    if 'postprocessors' in opt:
-                        options['postprocessors'] = opt['postprocessors']
-                
-                with yt_dlp.YoutubeDL(options) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    
-                    # البحث عن الملف
-                    filename = None
-                    
-                    if 'requested_downloads' in info and info['requested_downloads']:
-                        for download in info['requested_downloads']:
-                            if 'filepath' in download:
-                                filename = download['filepath']
-                                break
-                    
-                    if not filename or not os.path.exists(filename):
-                        test_filename = ydl.prepare_filename(info)
-                        if download_type in ['voice', 'audio']:
-                            test_filename = test_filename.rsplit('.', 1)[0] + '.mp3'
-                            if os.path.exists(test_filename):
-                                filename = test_filename
-                        elif os.path.exists(test_filename):
-                            filename = test_filename
-                    
-                    if not filename or not os.path.exists(filename):
-                        import glob
-                        files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
-                        if files:
-                            filename = max(files, key=os.path.getctime)
-                    
-                    if filename and os.path.exists(filename):
-                        return filename, info
-                    return None, None
-                    
-            except Exception as e:
-                logger.error(f"خطأ في التحميل: {e}")
-                return None, None
-        
-        result, info = await loop.run_in_executor(None, download_sync)
-        return result, info
-        
+        if not url:
+            return None
+        filename = os.path.join(THUMBNAIL_FOLDER, f"{video_id}.jpg")
+        import urllib.request
+        urllib.request.urlretrieve(url, filename)
+        if os.path.exists(filename):
+            return filename
     except Exception as e:
-        logger.error(f"خطأ عام: {e}")
-        return None, None
+        logger.error(f"خطأ في تحميل الصورة: {e}")
+    return None
 
 async def get_video_info(url):
     """الحصول على معلومات الفيديو"""
@@ -548,35 +168,196 @@ async def get_video_info(url):
                 'thumbnail': info.get('thumbnail', ''),
                 'url': url,
                 'upload_date': info.get('upload_date', ''),
-                'channel_url': info.get('channel_url', '')
+                'channel': info.get('channel', '')
             }
         return None
-        
     except Exception as e:
         logger.error(f"خطأ في جلب المعلومات: {e}")
         return None
 
-# ============= معالج الرسائل المحسن =============
+async def download_media(url, download_type='video'):
+    """تحميل الوسائط"""
+    try:
+        loop = asyncio.get_event_loop()
+        
+        def download_sync():
+            try:
+                options = YDL_OPTIONS.copy()
+                
+                if download_type in YOUTUBE_DOWNLOAD_OPTIONS:
+                    opt = YOUTUBE_DOWNLOAD_OPTIONS[download_type]
+                    options['format'] = opt['format']
+                    if 'postprocessors' in opt:
+                        options['postprocessors'] = opt['postprocessors']
+                        # تغيير الامتداد للملفات الصوتية
+                        if opt['type'] in ['audio', 'voice']:
+                            ext = 'mp3' if opt['type'] == 'audio' else 'ogg'
+                            options['outtmpl'] = os.path.join(DOWNLOAD_FOLDER, '%(title)s_%(id)s.' + ext)
+                
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    # البحث عن الملف
+                    filename = None
+                    
+                    if 'requested_downloads' in info and info['requested_downloads']:
+                        for download in info['requested_downloads']:
+                            if 'filepath' in download:
+                                filename = download['filepath']
+                                break
+                    
+                    if not filename or not os.path.exists(filename):
+                        test_filename = ydl.prepare_filename(info)
+                        if download_type in ['audio', 'voice']:
+                            ext = 'mp3' if download_type == 'audio' else 'ogg'
+                            test_filename = test_filename.rsplit('.', 1)[0] + '.' + ext
+                        if os.path.exists(test_filename):
+                            filename = test_filename
+                    
+                    if not filename or not os.path.exists(filename):
+                        import glob
+                        files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
+                        if files:
+                            filename = max(files, key=os.path.getctime)
+                    
+                    if filename and os.path.exists(filename):
+                        return filename, info
+                    return None, None
+                    
+            except Exception as e:
+                logger.error(f"خطأ في التحميل: {e}")
+                return None, None
+        
+        result, info = await loop.run_in_executor(None, download_sync)
+        return result, info
+        
+    except Exception as e:
+        logger.error(f"خطأ عام: {e}")
+        return None, None
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الرسائل"""
-    text = update.message.text.strip()
-    
-    if text.startswith(('http://', 'https://')):
-        await handle_url(update, context, text)
-    else:
-        await handle_search(update, context, text)
+# ============= البحث في يوتيوب =============
 
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
-    """معالجة الروابط"""
-    if not is_supported_url(url):
-        await update.message.reply_text(
-            "⚠️ **الرابط غير مدعوم**\n"
-            "جرب البحث بالكلمات بدلاً من ذلك",
-            parse_mode='Markdown'
-        )
-        return
+async def search_youtube(query: str, limit: int = 8):
+    """البحث في يوتيوب"""
+    try:
+        search_query = f"ytsearch{limit}:{query}"
+        with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True}) as ydl:
+            info = ydl.extract_info(search_query, download=False)
+            
+            videos = []
+            if info and 'entries' in info:
+                for entry in info['entries']:
+                    if entry:
+                        videos.append({
+                            'id': entry.get('id', ''),
+                            'title': entry.get('title', 'بدون عنوان')[:80],
+                            'url': f"https://youtube.com/watch?v={entry.get('id', '')}",
+                            'duration': entry.get('duration', 0),
+                            'uploader': entry.get('uploader', 'غير معروف')[:30],
+                            'views': entry.get('view_count', 0),
+                            'thumbnail': entry.get('thumbnail', '')
+                        })
+            return videos
+    except Exception as e:
+        logger.error(f"خطأ في البحث: {e}")
+        return []
+
+# ============= الأوامر الأساسية =============
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """رسالة الترحيب"""
+    welcome_msg = (
+        "🎥 **مرحباً بك في بوت تحميل الفيديوهات!**\n\n"
+        "📥 **طريقة الاستخدام:**\n\n"
+        "**1️⃣ تحميل مباشر:**\n"
+        "أرسل رابط من أي منصة وسأقوم بتحميل الفيديو فوراً\n"
+        "• انستقرام - تيك توك - فيسبوك\n"
+        "• بنترست - تويتر - وغيرها\n\n"
+        "**2️⃣ تحميل من يوتيوب:**\n"
+        "أرسل رابط يوتيوب، سأرسل لك:\n"
+        "• صورة الفيديو مع رابط المشاهدة\n"
+        "• 3 خيارات: فيديو - MP3 - بصمة صوتية\n\n"
+        "**3️⃣ البحث في يوتيوب:**\n"
+        "اكتب أي كلمة للبحث (مثل: 'أغاني حزينة')\n"
+        "ستظهر نتائج متطورة مع صور ومعلومات\n\n"
+        "✨ **فقط أرسل الرابط أو كلمة البحث!**"
+    )
+    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """مساعدة البوت"""
+    help_msg = (
+        "🆘 **دليل الاستخدام:**\n\n"
+        "**📱 تحميل مباشر (جميع المنصات):**\n"
+        "أرسل الرابط ← أستلم الفيديو\n\n"
+        "**🎬 تحميل من يوتيوب:**\n"
+        "أرسل رابط يوتيوب ← صورة + رابط مشاهدة + 3 أزرار\n\n"
+        "**🔍 البحث في يوتيوب:**\n"
+        "أكتب كلمة ← نتائج متطورة مع:\n"
+        "• صورة الفيديو\n"
+        "• معلومات كاملة\n"
+        "• أزرار تحميل فيديو/صوت\n"
+        "• مشاهدة مباشرة\n\n"
+        "**📊 الأوامر:**\n"
+        "/start - الصفحة الرئيسية\n"
+        "/help - هذه المساعدة\n"
+        "/stats - إحصائيات البوت\n\n"
+        "**💡 أمثلة للبحث:**\n"
+        "• 'موسيقى هادئة'\n"
+        "• 'أهداف مباراة'\n"
+        "• 'أفلام كرتون'\n"
+        "• 'مقاطع مضحكة'"
+    )
+    await update.message.reply_text(help_msg, parse_mode='Markdown')
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إحصائيات البوت"""
+    uptime = datetime.now() - download_stats['start_time']
+    hours = uptime.total_seconds() // 3600
+    minutes = (uptime.total_seconds() % 3600) // 60
     
+    stats_msg = (
+        "📊 **إحصائيات البوت:**\n\n"
+        f"✅ **الحالة:** يعمل\n"
+        f"📥 **التحميلات:** {download_stats['total_downloads']}\n"
+        f"🔍 **عمليات البحث:** {download_stats['total_searches']}\n"
+        f"⏱️ **وقت التشغيل:** {int(hours)} ساعة {int(minutes)} دقيقة\n"
+        f"🌐 **المنصات المدعومة:** {len(SUPPORTED_SITES)}\n\n"
+        "🚀 **شكراً لاستخدامك البوت!**"
+    )
+    await update.message.reply_text(stats_msg, parse_mode='Markdown')
+
+def is_youtube_url(url):
+    """التحقق إذا كان الرابط من يوتيوب"""
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    return 'youtube.com' in domain or 'youtu.be' in domain
+
+def is_supported_url(url):
+    """التحقق من أن الرابط مدعوم"""
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+    
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    
+    for site in SUPPORTED_SITES:
+        if site in domain:
+            return True
+    
+    # روابط مختصرة
+    shorteners = ['bit.ly', 'tinyurl', 'shorturl', 'ow.ly', 'is.gd']
+    if any(shortener in domain for shortener in shorteners):
+        return True
+    
+    return False
+
+# ============= معالج الروابط =============
+
+async def handle_youtube_url(update: Update, url: str):
+    """معالجة روابط يوتيوب (مع صورة وأزرار)"""
     progress_msg = await update.message.reply_text(
         "⏳ **جاري تحضير الفيديو...**",
         parse_mode='Markdown'
@@ -586,25 +367,22 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
         info = await get_video_info(url)
         
         if info:
+            # تحميل الصورة المصغرة
             thumb_path = None
             if info['thumbnail']:
                 thumb_path = await download_thumbnail(info['thumbnail'], str(int(time.time())))
             
-            # أزرار التحميل المحسنة
+            # تجهيز الأزرار
             keyboard = [
                 [
-                    InlineKeyboardButton("🎬 فيديو", callback_data=f"dl_video_{url}"),
-                    InlineKeyboardButton("🎤 بصمة", callback_data=f"dl_voice_{url}"),
-                    InlineKeyboardButton("🎵 MP3", callback_data=f"dl_audio_{url}")
-                ],
-                [
-                    InlineKeyboardButton("👁️ مشاهدة", callback_data=f"watch_{url}"),
-                    InlineKeyboardButton("ℹ️ معلومات", callback_data=f"info_{url}"),
-                    InlineKeyboardButton("🔍 مشابهة", callback_data=f"similar_{url}")
+                    InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"yt_video_{url}"),
+                    InlineKeyboardButton("🎵 ملف MP3", callback_data=f"yt_audio_{url}"),
+                    InlineKeyboardButton("🎤 بصمة صوتية", callback_data=f"yt_voice_{url}")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
+            # تجهيز المعلومات
             duration_str = format_duration(info['duration'])
             views_str = format_number(info['views'])
             
@@ -614,6 +392,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
                 f"⏱️ **المدة:** {duration_str}\n"
                 f"👁️ **المشاهدات:** {views_str}\n"
                 f"❤️ **الإعجابات:** {format_number(info['likes'])}\n\n"
+                f"👁️ **لمشاهدة الفيديو اضغط هنا:**\n[اضغط للمشاهدة مباشرة]({url})\n\n"
                 f"📥 **اختر نوع التحميل:**"
             )
             
@@ -638,7 +417,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
                     parse_mode='Markdown'
                 )
         else:
-            await progress_msg.edit_text("❌ **فشل في جلب المعلومات**", parse_mode='Markdown')
+            await progress_msg.edit_text("❌ **فشل في جلب معلومات الفيديو**", parse_mode='Markdown')
             
     except Exception as e:
         logger.error(f"خطأ: {e}")
@@ -647,43 +426,122 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, url: st
             parse_mode='Markdown'
         )
 
-async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
-    """معالجة البحث المحسن"""
-    download_stats['total_searches'] += 1
-    
-    # قائمة منصات البحث
-    keyboard = [
-        [
-            InlineKeyboardButton("📺 يوتيوب", callback_data=f"search_youtube_{query}"),
-            InlineKeyboardButton("🎵 تيك توك", callback_data=f"search_tiktok_{query}"),
-        ],
-        [
-            InlineKeyboardButton("📸 انستغرام", callback_data=f"search_instagram_{query}"),
-            InlineKeyboardButton("🔍 بحث في الكل", callback_data=f"search_all_{query}"),
-        ],
-        [
-            InlineKeyboardButton("📅 فلترة", callback_data=f"filter_{query}"),
-            InlineKeyboardButton("📈 الأكثر مشاهدة", callback_data=f"trending_{query}"),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"🔍 **نتائج البحث عن:** {query}\n\n"
-        f"اختر منصة البحث:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-async def perform_search(update: Update, query: str, engine: str):
-    """تنفيذ البحث وعرض النتائج"""
-    progress_msg = await update.effective_message.reply_text(
-        f"🔍 **جاري البحث في {SEARCH_ENGINES[engine]['name']}...**",
+async def handle_direct_url(update: Update, url: str):
+    """معالجة الروابط المباشرة (تحميل فوري)"""
+    progress_msg = await update.message.reply_text(
+        "⏳ **جاري تحميل الفيديو...**\nالرجاء الانتظار",
         parse_mode='Markdown'
     )
     
     try:
-        videos = await search_videos_advanced(query, engine, limit=8)
+        logger.info(f"تحميل مباشر: {url}")
+        
+        video_path = await download_video_direct(url, progress_msg)
+        
+        if video_path and os.path.exists(video_path):
+            file_size = os.path.getsize(video_path) / (1024 * 1024)
+            
+            if file_size > 50:
+                await progress_msg.edit_text(
+                    f"❌ **الفيديو كبير جداً**\nالحجم: {file_size:.1f} MB\nالحد الأقصى: 50 MB",
+                    parse_mode='Markdown'
+                )
+                os.remove(video_path)
+                return
+            
+            await progress_msg.delete()
+            
+            with open(video_path, 'rb') as video_file:
+                await update.message.reply_video(
+                    video=video_file,
+                    caption=f"✅ **تم التحميل بنجاح!**\n📊 الحجم: {file_size:.1f} MB",
+                    supports_streaming=True,
+                    parse_mode='Markdown'
+                )
+            
+            os.remove(video_path)
+            download_stats['total_downloads'] += 1
+            logger.info(f"✅ تم التحميل: {video_path}")
+            
+        else:
+            await progress_msg.edit_text(
+                "❌ **فشل التحميل**\n\n"
+                "تأكد من:\n"
+                "• الرابط صحيح\n"
+                "• الفيديو متاح\n"
+                "• جرب رابط آخر",
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"خطأ: {e}")
+        await progress_msg.edit_text(
+            f"❌ **حدث خطأ**\n{str(e)[:100]}",
+            parse_mode='Markdown'
+        )
+
+async def download_video_direct(url, progress_msg=None):
+    """تحميل الفيديو مباشرة (للمنصات الأخرى)"""
+    
+    async def update_progress(text):
+        if progress_msg:
+            try:
+                await progress_msg.edit_text(text)
+            except:
+                pass
+    
+    try:
+        loop = asyncio.get_event_loop()
+        
+        def try_download():
+            try:
+                with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    filename = None
+                    if 'requested_downloads' in info and info['requested_downloads']:
+                        for download in info['requested_downloads']:
+                            if 'filepath' in download:
+                                filename = download['filepath']
+                                break
+                    
+                    if not filename or not os.path.exists(filename):
+                        test_filename = ydl.prepare_filename(info)
+                        if os.path.exists(test_filename):
+                            filename = test_filename
+                    
+                    if not filename or not os.path.exists(filename):
+                        import glob
+                        files = glob.glob(os.path.join(DOWNLOAD_FOLDER, '*'))
+                        if files:
+                            filename = max(files, key=os.path.getctime)
+                    
+                    return filename
+            except Exception as e:
+                logger.error(f"خطأ في التحميل: {e}")
+                return None
+        
+        await update_progress("⏳ جاري تحميل الفيديو...")
+        result = await loop.run_in_executor(None, try_download)
+        return result
+        
+    except Exception as e:
+        logger.error(f"خطأ عام: {e}")
+        return None
+
+# ============= البحث في يوتيوب =============
+
+async def handle_search(update: Update, query: str):
+    """معالجة البحث في يوتيوب"""
+    download_stats['total_searches'] += 1
+    
+    progress_msg = await update.message.reply_text(
+        f"🔍 **جاري البحث عن:** {query}\nالرجاء الانتظار...",
+        parse_mode='Markdown'
+    )
+    
+    try:
+        videos = await search_youtube(query, limit=8)
         
         if videos:
             await progress_msg.delete()
@@ -691,35 +549,33 @@ async def perform_search(update: Update, query: str, engine: str):
             for i, video in enumerate(videos, 1):
                 thumb_path = None
                 if video['thumbnail']:
-                    thumb_path = await download_thumbnail(
-                        video['thumbnail'], 
-                        f"{engine}_{i}_{int(time.time())}"
-                    )
+                    thumb_path = await download_thumbnail(video['thumbnail'], f"search_{i}_{int(time.time())}")
                 
                 duration_str = format_duration(video['duration'])
                 views_str = format_number(video['views'])
                 
-                # أزرار لكل فيديو
+                # أزرار لكل نتيجة
                 keyboard = [
                     [
-                        InlineKeyboardButton("🎬 فيديو", callback_data=f"dl_video_{video['url']}"),
-                        InlineKeyboardButton("🎵 MP3", callback_data=f"dl_audio_{video['url']}"),
+                        InlineKeyboardButton("🎬 فيديو", callback_data=f"yt_video_{video['url']}"),
+                        InlineKeyboardButton("🎵 MP3", callback_data=f"yt_audio_{video['url']}"),
+                        InlineKeyboardButton("🎤 بصمة", callback_data=f"yt_voice_{video['url']}")
                     ],
                     [
-                        InlineKeyboardButton("👁️ مشاهدة", callback_data=f"watch_{video['url']}"),
-                        InlineKeyboardButton("ℹ️ تفاصيل", callback_data=f"info_{video['url']}"),
+                        InlineKeyboardButton("👁️ مشاهدة", callback_data=f"watch_{video['url']}")
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 caption = (
                     f"{i}. **{video['title']}**\n"
-                    f"👤 {video['uploader']} | ⏱️ {duration_str} | 👁️ {views_str}\n"
+                    f"👤 {video['uploader']} | ⏱️ {duration_str} | 👁️ {views_str}\n\n"
+                    f"👁️ [لمشاهدة الفيديو اضغط هنا]({video['url']})"
                 )
                 
                 if thumb_path and os.path.exists(thumb_path):
                     with open(thumb_path, 'rb') as thumb_file:
-                        await update.effective_message.reply_photo(
+                        await update.message.reply_photo(
                             photo=thumb_file,
                             caption=caption,
                             reply_markup=reply_markup,
@@ -730,7 +586,7 @@ async def perform_search(update: Update, query: str, engine: str):
                     except:
                         pass
                 else:
-                    await update.effective_message.reply_text(
+                    await update.message.reply_text(
                         caption,
                         reply_markup=reply_markup,
                         parse_mode='Markdown'
@@ -744,27 +600,27 @@ async def perform_search(update: Update, query: str, engine: str):
     except Exception as e:
         logger.error(f"خطأ في البحث: {e}")
         await progress_msg.edit_text(
-            f"❌ **حدث خطأ**\n{str(e)[:100]}",
+            f"❌ **حدث خطأ في البحث**\n{str(e)[:100]}",
             parse_mode='Markdown'
         )
 
-# ============= معالج الأزرار المحسن =============
+# ============= معالج الأزرار =============
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الأزرار المحسنة"""
+    """معالجة الأزرار"""
     query = update.callback_query
     await query.answer()
     
     data = query.data
     
-    # أزرار التحميل
-    if data.startswith('dl_'):
+    # أزرار تحميل يوتيوب
+    if data.startswith('yt_'):
         parts = data.split('_', 2)
-        dl_type = parts[1]
+        dl_type = parts[1]  # video, audio, voice
         url = parts[2]
         
         await query.edit_message_caption(
-            caption=f"⏳ **جاري التحميل...**\n{DOWNLOAD_OPTIONS[dl_type]['emoji']} {DOWNLOAD_OPTIONS[dl_type]['name']}"
+            caption=f"⏳ **جاري التحميل...**\n{YOUTUBE_DOWNLOAD_OPTIONS[dl_type]['name']}"
         )
         
         try:
@@ -777,7 +633,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if dl_type == 'video':
                         await query.message.reply_video(
                             video=file,
-                            caption=f"✅ **تم التحميل!**\n📊 {file_size:.1f} MB | {info.get('title', '')[:50]}",
+                            caption=f"✅ **تم التحميل!**\n📊 {file_size:.1f} MB\n{info.get('title', '')[:50]}",
                             supports_streaming=True
                         )
                     elif dl_type == 'voice':
@@ -789,14 +645,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await query.message.reply_audio(
                             audio=file,
                             caption=f"✅ **ملف MP3**\n📊 {file_size:.1f} MB",
-                            title=info.get('title', 'صوت')[:50],
-                            performer=info.get('uploader', 'غير معروف')[:30]
+                            title=info.get('title', 'صوت')[:50]
                         )
                 
                 os.remove(file_path)
                 download_stats['total_downloads'] += 1
                 
-                # إعادة الصورة الأصلية
                 await query.edit_message_caption(
                     caption=query.message.caption_html,
                     parse_mode='HTML'
@@ -812,50 +666,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption=f"❌ **خطأ:** {str(e)[:100]}"
             )
     
-    # أزرار البحث
-    elif data.startswith('search_'):
-        parts = data.split('_', 2)
-        engine = parts[1]
-        query_text = parts[2]
-        
-        if engine == 'all':
-            # بحث في كل المنصات
-            await query.edit_message_text(
-                f"🔍 **جاري البحث في جميع المنصات عن:** {query_text}",
-                parse_mode='Markdown'
-            )
-            
-            results = await search_multi_engine(query_text)
-            
-            response = f"🔍 **نتائج البحث عن:** {query_text}\n\n"
-            
-            for engine, videos in results.items():
-                if videos:
-                    response += f"{SEARCH_ENGINES[engine]['emoji']} **{SEARCH_ENGINES[engine]['name']}:**\n"
-                    for video in videos[:3]:
-                        response += f"• {video['title'][:50]}...\n"
-                    response += "\n"
-            
-            response += "\nاختر منصة للتفاصيل:"
-            
-            keyboard = []
-            for engine in results.keys():
-                if results[engine]:
-                    keyboard.append([
-                        InlineKeyboardButton(
-                            f"{SEARCH_ENGINES[engine]['emoji']} {SEARCH_ENGINES[engine]['name']}", 
-                            callback_data=f"search_{engine}_{query_text}"
-                        )
-                    ])
-            
-            await query.edit_message_text(
-                response,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-        else:
-            await perform_search(update, query_text, engine)
-    
     # مشاهدة مباشرة
     elif data.startswith('watch_'):
         url = data.replace('watch_', '')
@@ -863,129 +673,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=f"👁️ **مشاهدة مباشرة:**\n[اضغط هنا]({url})",
             parse_mode='Markdown'
         )
+
+# ============= المعالج الرئيسي =============
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة الرسائل الرئيسية"""
+    text = update.message.text.strip()
     
-    # معلومات الفيديو
-    elif data.startswith('info_'):
-        url = data.replace('info_', '')
-        await query.edit_message_caption(
-            caption="⏳ **جلب المعلومات...**"
-        )
-        
-        info = await get_video_info(url)
-        if info:
-            duration_str = format_duration(info['duration'])
-            
-            info_text = (
-                f"ℹ️ **معلومات الفيديو**\n\n"
-                f"**العنوان:** {info['title'][:200]}\n"
-                f"**الناشر:** {info['uploader']}\n"
-                f"**المدة:** {duration_str}\n"
-                f"**المشاهدات:** {format_number(info['views'])}\n"
-                f"**الإعجابات:** {format_number(info['likes'])}\n"
-                f"**تاريخ الرفع:** {info['upload_date']}\n\n"
-                f"**الوصف:**\n{info['description'][:300]}"
+    # التحقق إذا كان رابط
+    if text.startswith(('http://', 'https://')):
+        # التحقق من الرابط
+        if not is_supported_url(text):
+            await update.message.reply_text(
+                "⚠️ **الرابط غير مدعوم**\n"
+                "المنصات المدعومة: يوتيوب، تيك توك، انستقرام، فيسبوك، تويتر، بنترست وغيرها",
+                parse_mode='Markdown'
             )
-            await query.edit_message_caption(caption=info_text)
+            return
+        
+        # إذا كان يوتيوب
+        if is_youtube_url(text):
+            await handle_youtube_url(update, text)
         else:
-            await query.edit_message_caption(caption="❌ **لا يمكن جلب المعلومات**")
-    
-    # فيديوهات مشابهة
-    elif data.startswith('similar_'):
-        url = data.replace('similar_', '')
-        await query.edit_message_caption(
-            caption="🔍 **جاري البحث عن فيديوهات مشابهة...**"
-        )
-        
-        info = await get_video_info(url)
-        if info:
-            # استخراج كلمات مفتاحية من العنوان
-            keywords = info['title'].split()[:3]
-            search_query = ' '.join(keywords)
-            await handle_search(update, context, search_query)
-            await query.message.delete()
+            # تحميل مباشر للمنصات الأخرى
+            await handle_direct_url(update, text)
+    else:
+        # بحث في يوتيوب
+        if len(text) > 2:
+            await handle_search(update, text)
         else:
-            await query.edit_message_caption(caption="❌ **لا يمكن العثور على فيديوهات مشابهة**")
-    
-    # القائمة الرئيسية
-    elif data == "stats":
-        await stats_command(update, context)
-    
-    elif data == "help":
-        await help_command(update, context)
-    
-    elif data == "search_menu":
-        search_text = (
-            "🔍 **قائمة البحث المتقدم:**\n\n"
-            "• اكتب كلمة للبحث\n"
-            "• اختر المنصة:\n"
-            "  📺 يوتيوب - مقاطع فيديو\n"
-            "  🎵 تيك توك - مقاطع قصيرة\n"
-            "  📸 انستغرام - ريلز\n\n"
-            "• استخدم الفلاتر:\n"
-            "  /search [كلمة] - بحث سريع\n"
-            "  /trending - الأكثر مشاهدة\n"
-            "  /popular - الأكثر رواجاً"
-        )
-        await query.edit_message_text(search_text, parse_mode='Markdown')
-    
-    elif data == "trending":
-        await query.edit_message_text(
-            "📈 **جاري جلب الأكثر مشاهدة...**",
-            parse_mode='Markdown'
-        )
-        
-        videos = await get_trending_videos('music')
-        
-        if videos:
-            response = "📈 **الأكثر مشاهدة اليوم:**\n\n"
-            for i, video in enumerate(videos, 1):
-                response += f"{i}. **{video['title']}**\n"
-                response += f"   👤 {video['uploader']}\n\n"
-            
-            await query.edit_message_text(response, parse_mode='Markdown')
-        else:
-            await query.edit_message_text("❌ **لا توجد نتائج**", parse_mode='Markdown')
-    
-    elif data == "all_platforms":
-        platforms_text = "**🌐 جميع المنصات المدعومة:**\n\n"
-        cols = 3
-        for i, site in enumerate(sorted(ALL_SUPPORTED_SITES), 1):
-            platforms_text += f"{i}. {site}\n"
-        await query.edit_message_text(platforms_text, parse_mode='Markdown')
-    
-    elif data == "quick_download":
-        quick_text = (
-            "⚡ **تحميل سريع:**\n\n"
-            "• أرسل الرابط مباشرة\n"
-            "• سيتم التحميل بأعلى جودة\n"
-            "• اختر:\n"
-            "  🎬 فيديو - تلقائياً\n"
-            "  🎤 بصمة - رسالة صوتية\n"
-            "  🎵 MP3 - ملف موسيقى"
-        )
-        await query.edit_message_text(quick_text, parse_mode='Markdown')
-    
-    elif data.startswith('filter_'):
-        query_text = data.replace('filter_', '')
-        
-        filter_keyboard = [
-            [
-                InlineKeyboardButton("📅 اليوم", callback_data=f"search_youtube_{query_text} today"),
-                InlineKeyboardButton("📅 هذا الأسبوع", callback_data=f"search_youtube_{query_text} week"),
-            ],
-            [
-                InlineKeyboardButton("🎥 جودة عالية", callback_data=f"search_youtube_{query_text} hd"),
-                InlineKeyboardButton("⏱️ +10 دقائق", callback_data=f"search_youtube_{query_text} long"),
-            ],
-            [
-                InlineKeyboardButton("🔙 رجوع", callback_data=f"search_menu"),
-            ]
-        ]
-        await query.edit_message_text(
-            f"🔍 **اختر فلتر للبحث:** {query_text}",
-            reply_markup=InlineKeyboardMarkup(filter_keyboard),
-            parse_mode='Markdown'
-        )
+            await update.message.reply_text(
+                "❌ **كلمة البحث قصيرة جداً**\nالرجاء كتابة كلمة أطول من حرفين",
+                parse_mode='Markdown'
+            )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة الأخطاء"""
@@ -993,8 +713,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if update and update.message:
             await update.message.reply_text(
-                "❌ **حدث خطأ في البوت**\n"
-                "الرجاء المحاولة مرة أخرى",
+                "❌ **حدث خطأ في البوت**\nالرجاء المحاولة مرة أخرى",
                 parse_mode='Markdown'
             )
     except:
@@ -1004,13 +723,13 @@ def cleanup():
     """تنظيف الملفات المؤقتة"""
     try:
         shutil.rmtree(DOWNLOAD_FOLDER)
-        logger.info("✅ تم التنظيف")
+        logger.info("✅ تم تنظيف الملفات المؤقتة")
     except Exception as e:
         logger.error(f"خطأ في التنظيف: {e}")
 
 def main():
     """تشغيل البوت"""
-    logger.info("🚀 بدء تشغيل البوت الذهبي...")
+    logger.info("🚀 بدء تشغيل البوت...")
     
     try:
         application = Application.builder().token(TOKEN).build()
@@ -1019,9 +738,6 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("stats", stats_command))
-        application.add_handler(CommandHandler("search", handle_message))
-        application.add_handler(CommandHandler("trending", handle_message))
-        application.add_handler(CommandHandler("popular", handle_message))
         
         # معالج الرسائل
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -1032,15 +748,17 @@ def main():
         # معالج الأخطاء
         application.add_error_handler(error_handler)
         
-        print("\n" + "="*70)
-        print("🤖 البوت الذهبي - النسخة النهائية الخارقة".center(70))
-        print("="*70)
-        print(f"📝 التوكن: {TOKEN[:15]}...")
+        print("\n" + "="*60)
+        print("🤖 البوت يعمل الآن!".center(60))
+        print("="*60)
+        print(f"📝 توكن: {TOKEN[:15]}...")
         print(f"📁 المجلد: {DOWNLOAD_FOLDER}")
-        print(f"🌐 المنصات: {len(ALL_SUPPORTED_SITES)}")
-        print(f"🔍 محرك بحث: يوتيوب - تيك توك - انستغرام")
-        print(f"⚡ الإصدار: 5.0 (النهائي)")
-        print("="*70 + "\n")
+        print(f"🌐 المنصات: {len(SUPPORTED_SITES)}")
+        print("="*60)
+        print("🎬 يوتيوب: صورة + رابط + 3 أزرار")
+        print("📱 منصات أخرى: تحميل مباشر")
+        print("🔍 بحث متطور في يوتيوب")
+        print("="*60 + "\n")
         
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         
@@ -1050,4 +768,5 @@ def main():
         cleanup()
 
 if __name__ == '__main__':
+    from datetime import datetime
     main()
