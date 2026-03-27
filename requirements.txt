@@ -1,2 +1,3 @@
-python-telegram-bot==20.7
-yt-dlp==2024.7.25
+python-telegram-bot
+google-generativeai
+python-dotenv
