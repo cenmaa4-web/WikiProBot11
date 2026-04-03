@@ -1,6 +1,6 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
 # تفعيل التسجيل للأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -9,7 +9,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = "8753575669:AAHH6EXVMEVxIoG4RhFHhl9EafyuKoJmLSs"
 
 # ضع رابط تطبيقك المصغر هنا (من static.app أو غيره)
-MINI_APP_URL = "https://your-miniapp-url.com"
+MINI_APP_URL = "https://comfortable-ducks.static2.website/upload-pdf"
 
 # أمر /start
 async def start(update: Update, context: CallbackContext):
@@ -66,4 +66,4 @@ def main():
     app.run_polling(allowed_updates=True)
 
 if __name__ == "__main__":
-    main()     
+    main()
