@@ -8,12 +8,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 import yt_dlp
 
 # ===================== إعدادات البوت =====================
-8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4 = "ضع_توكن_البوت_هنا"  # استبدل هذا بالتوكن من @BotFather
+BOT_TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"  # توكن البوت الحقيقي
 
 # رسالة الترحيب
 START_MESSAGE = """
 🎬 **مرحباً بك في بوت التحميل الشامل!**
-
+...
 📌 **طريقة الاستخدام:**
 • أرسل رابط فيديو من أي منصة ← سيتم رفع الفيديو مباشرة
 • أرسل رابط يوتيوب ← ستظهر لك خيارات التحميل
