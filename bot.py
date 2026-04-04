@@ -1,20 +1,47 @@
 import os
-import re
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
+import json
+import requests
 import yt_dlp
+import time
 
 BOT_TOKEN = "8783172268:AAGySqhbboqeW5DoFO334F-IYxjTr1fJUz4"
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-START_MESSAGE = """
-🎬 **بوت التحميل الشامل**
+def send_message(chat_id, text, reply_markup=None):
+    url = f"{API_URL}/sendMessage"
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    requests.post(url, json=data)
 
-• ارسل رابط فيديو من اي منصة ← يرفع الفيديو مباشرة
-• ارسل رابط يوتيوب ← يظهر لك خيارات التحميل  
-• ارسل كلمة بحث ← يعطيك 4 نتائج من يوتيوب
+def send_video(chat_id, video_path, caption=""):
+    url = f"{API_URL}/sendVideo"
+    with open(video_path, 'rb') as video:
+        files = {'video': video}
+        data = {'chat_id': chat_id, 'caption': caption}
+        requests.post(url, data=data, files=files)
 
-**المنصات المدعومة:** يوتيوب - تيك توك - انستغرام - فيسبوك - تويتر - سناب شات
-"""
+def send_audio(chat_id, audio_path, title=""):
+    url = f"{API_URL}/sendAudio"
+    with open(audio_path, 'rb') as audio:
+        files = {'audio': audio}
+        data = {'chat_id': chat_id, 'title': title}
+        requests.post(url, data=data, files=files)
+
+def send_photo(chat_id, photo_url, caption="", reply_markup=None):
+    url = f"{API_URL}/sendPhoto"
+    data = {"chat_id": chat_id, "photo": photo_url, "caption": caption, "parse_mode": "Markdown"}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    requests.post(url, json=data)
+
+def get_updates(offset=None):
+    url = f"{API_URL}/getUpdates"
+    params = {"timeout": 30}
+    if offset:
+        params["offset"] = offset
+    response = requests.get(url, params=params)
+    return response.json().get("result", [])
 
 class VideoDownloader:
     def is_youtube(self, url):
@@ -26,32 +53,20 @@ class VideoDownloader:
     
     def download_video(self, url):
         os.makedirs('downloads', exist_ok=True)
-        opts = {
-            'format': 'best[height<=720]',
-            'outtmpl': 'downloads/video_%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True
-        }
+        opts = {'format': 'best[height<=720]', 'outtmpl': 'downloads/video_%(id)s.%(ext)s', 'quiet': True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return ydl.prepare_filename(info)
     
     def download_audio(self, url):
         os.makedirs('downloads', exist_ok=True)
-        opts = {
-            'format': 'bestaudio',
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-            'outtmpl': 'downloads/audio_%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True
-        }
+        opts = {'format': 'bestaudio', 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}], 'outtmpl': 'downloads/audio_%(id)s.%(ext)s', 'quiet': True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            return filename.replace('.webm', '.mp3').replace('.m4a', '.mp3')
+            return ydl.prepare_filename(info).replace('.webm', '.mp3').replace('.m4a', '.mp3')
     
     def search_youtube(self, query):
-        opts = {'quiet': True, 'extract_flat': True, 'no_warnings': True}
+        opts = {'quiet': True, 'extract_flat': True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"ytsearch4:{query}", download=False)
             results = []
@@ -65,96 +80,82 @@ class VideoDownloader:
             return results
 
 downloader = VideoDownloader()
+last_update_id = 0
 
-def youtube_buttons(url):
-    keyboard = [
-        [InlineKeyboardButton("🎬 تحميل فيديو", callback_data=f"video_{url}")],
-        [InlineKeyboardButton("🎵 تحميل صوت MP3", callback_data=f"audio_{url}")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+def make_keyboard(buttons):
+    return {"inline_keyboard": [[{"text": text, "callback_data": data}] for text, data in buttons]}
 
-def start(update, context):
-    update.message.reply_text(START_MESSAGE, parse_mode='Markdown')
-
-def handle_message(update, context):
-    msg = update.message.text.strip()
-    if not msg:
-        return
-    
-    status = update.message.reply_text("⏳ جاري المعالجة...")
-    
-    if 'http://' in msg or 'https://' in msg:
-        if downloader.is_youtube(msg):
-            status.edit_text("✅ رابط يوتيوب - اختر ما تريد:", reply_markup=youtube_buttons(msg))
-        
-        elif downloader.is_social(msg):
-            status.edit_text("📥 جاري تحميل الفيديو...")
+def handle_message(chat_id, text):
+    if 'http://' in text or 'https://' in text:
+        if downloader.is_youtube(text):
+            keyboard = make_keyboard([
+                ("🎬 تحميل فيديو", f"video_{text}"),
+                ("🎵 تحميل صوت", f"audio_{text}")
+            ])
+            send_message(chat_id, "✅ رابط يوتيوب - اختر:", keyboard)
+        elif downloader.is_social(text):
+            send_message(chat_id, "📥 جاري تحميل الفيديو...")
             try:
-                path = downloader.download_video(msg)
-                with open(path, 'rb') as video:
-                    update.message.reply_video(video, caption="✅ تم التحميل بنجاح!")
+                path = downloader.download_video(text)
+                send_video(chat_id, path, "✅ تم التحميل!")
                 os.remove(path)
-                status.delete()
             except Exception as e:
-                status.edit_text(f"❌ فشل التحميل: {str(e)[:100]}")
+                send_message(chat_id, f"❌ فشل: {str(e)[:100]}")
         else:
-            status.edit_text("❌ هذا الرابط غير مدعوم")
-    
+            send_message(chat_id, "❌ رابط غير مدعوم")
     else:
-        status.edit_text(f"🔍 جاري البحث عن: {msg}")
+        send_message(chat_id, f"🔍 جاري البحث عن: {text}")
         try:
-            results = downloader.search_youtube(msg)
-            status.delete()
-            
-            for result in results:
-                button = InlineKeyboardMarkup([[InlineKeyboardButton("🎬 تحميل", callback_data=f"video_{result['url']}")]])
-                caption = f"🎥 **{result['title'][:50]}**"
-                update.message.reply_photo(result['thumbnail'], caption=caption, reply_markup=button, parse_mode='Markdown')
+            results = downloader.search_youtube(text)
+            for r in results:
+                keyboard = make_keyboard([("🎬 تحميل", f"video_{r['url']}")])
+                send_photo(chat_id, r['thumbnail'], f"🎥 {r['title'][:50]}", keyboard)
         except Exception as e:
-            status.edit_text(f"❌ فشل البحث: {str(e)[:100]}")
+            send_message(chat_id, f"❌ فشل البحث: {str(e)[:100]}")
 
-def handle_callback(update, context):
-    query = update.callback_query
-    query.answer()
-    
-    data = query.data
-    action, url = data.split('_', 1)
-    
-    query.edit_message_text("⏳ جاري التحميل... يرجى الانتظار")
+def handle_callback(chat_id, callback_data, message_id):
+    action, url = callback_data.split('_', 1)
+    send_message(chat_id, "⏳ جاري التحميل...")
     
     try:
         if action == 'video':
             path = downloader.download_video(url)
-            with open(path, 'rb') as video:
-                query.message.reply_video(video, caption="✅ تم تحميل الفيديو!")
-            os.remove(path)
-        
-        elif action == 'audio':
+            send_video(chat_id, path, "✅ تم تحميل الفيديو!")
+        else:
             path = downloader.download_audio(url)
-            with open(path, 'rb') as audio:
-                query.message.reply_audio(audio, title="صوت من يوتيوب", performer="Downloader Bot")
-            os.remove(path)
-        
-        query.delete_message()
-    
+            send_audio(chat_id, path, "صوت من يوتيوب")
+        os.remove(path)
     except Exception as e:
-        query.edit_message_text(f"❌ فشل التحميل: {str(e)[:100]}")
+        send_message(chat_id, f"❌ فشل: {str(e)[:100]}")
 
-if __name__ == '__main__':
-    print("=" * 40)
-    print("🚀 تشغيل بوت التحميل الشامل...")
-    print("=" * 40)
-    
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-    dp.add_handler(CallbackQueryHandler(handle_callback))
-    
-    print("✅ البوت يعمل الآن!")
-    print("📱 اذهب إلى تليجرام وابدأ باستخدام البوت")
-    print("=" * 40)
-    
-    updater.start_polling()
-    updater.idle()
+print("🚀 تشغيل البوت...")
+print("✅ البوت يعمل الآن!")
+
+while True:
+    try:
+        updates = get_updates(last_update_id + 1)
+        for update in updates:
+            last_update_id = update['update_id']
+            
+            if 'message' in update:
+                msg = update['message']
+                chat_id = msg['chat']['id']
+                if 'text' in msg:
+                    handle_message(chat_id, msg['text'])
+            
+            elif 'callback_query' in update:
+                query = update['callback_query']
+                chat_id = query['message']['chat']['id']
+                message_id = query['message']['message_id']
+                callback_data = query['data']
+                
+                # الرد على callback
+                url = f"{API_URL}/answerCallbackQuery"
+                requests.post(url, json={"callback_query_id": query['id']})
+                
+                handle_callback(chat_id, callback_data, message_id)
+        
+        time.sleep(1)
+    except Exception as e:
+        print(f"خطأ: {e}")
+        time.sleep(3)
