@@ -1,24 +1,26 @@
 import os
 import re
-import logging
-from telegram import Update, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import yt_dlp
 import tempfile
+import requests
+import yt_dlp
 
 BOT_TOKEN = "8382754822:AAFMJwBsW83k_tXXdhqb1hBx5sj390R_Sf0"
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+def send_message(chat_id, text):
+    requests.post(f"{BASE_URL}/sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎬 **البوت يعمل!**\n\nأرسل رابط فيديو من إنستقرام",
-        parse_mode='Markdown'
-    )
+def send_video(chat_id, video_path, caption):
+    with open(video_path, 'rb') as f:
+        requests.post(f"{BASE_URL}/sendVideo", data={"chat_id": chat_id, "caption": caption}, files={"video": f})
 
-def download_video_sync(url: str):
-    """تحميل الفيديو (نسخة متزامنة)"""
+def get_updates(offset=None):
+    url = f"{BASE_URL}/getUpdates"
+    params = {"timeout": 30, "offset": offset} if offset else {"timeout": 30}
+    response = requests.get(url, params=params)
+    return response.json().get("result", [])
+
+def download_video(url):
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
     temp_path = temp_file.name
     temp_file.close()
@@ -26,69 +28,63 @@ def download_video_sync(url: str):
     ydl_opts = {
         'outtmpl': temp_path[:-4],
         'quiet': True,
-        'no_warnings': True,
         'format': 'best[ext=mp4]/best',
     }
-    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
             final_path = f"{temp_path[:-4]}.mp4"
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
+            if os.path.exists(final_path):
                 return final_path
         return None
     except Exception as e:
-        logger.error(f"خطأ: {e}")
+        print(f"Error: {e}")
         return None
 
-def get_info_sync(url: str):
-    """جلب المعلومات (نسخة متزامنة)"""
-    ydl_opts = {'quiet': True, 'no_warnings': True}
+def get_info(url):
+    ydl_opts = {'quiet': True}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return {
-                'views': info.get('view_count', 0),
-                'likes': info.get('like_count', 0),
-                'uploader': info.get('uploader', 'غير معروف'),
-            }
+            return f"📊 إحصائيات\n👁️ مشاهدات: {info.get('view_count', 0):,}\n❤️ إعجابات: {info.get('like_count', 0):,}\n👤 ناشر: {info.get('uploader', 'غير معروف')}"
     except:
-        return None
+        return "✅ تم التحميل بنجاح!"
 
-async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-    msg = await update.message.reply_text("⏳ جاري التحميل...")
-    
-    try:
-        # تشغيل التحميل في thread منفصل
-        video_path = await asyncio.get_event_loop().run_in_executor(None, download_video_sync, url)
-        
-        if not video_path:
-            await msg.edit_text("❌ فشل التحميل")
-            return
-        
-        stats = await asyncio.get_event_loop().run_in_executor(None, get_info_sync, url)
-        
-        caption = "✅ تم التحميل بنجاح!"
-        if stats:
-            caption = f"📊 إحصائيات\n👁️ مشاهدات: {stats['views']:,}\n❤️ إعجابات: {stats['likes']:,}\n👤 ناشر: {stats['uploader']}"
-        
-        with open(video_path, 'rb') as f:
-            await update.message.reply_video(video=InputFile(f), caption=caption)
-        
-        await msg.delete()
-        os.unlink(video_path)
-    except Exception as e:
-        await msg.edit_text(f"⚠️ خطأ: {str(e)[:100]}")
-
-async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'instagram\.com'), handle_link))
-    
+def main():
     print("✅ البوت يعمل...")
-    await app.run_polling()
+    last_update_id = 0
+    
+    while True:
+        try:
+            updates = get_updates(last_update_id + 1 if last_update_id else None)
+            
+            for update in updates:
+                last_update_id = update['update_id']
+                
+                if 'message' in update:
+                    msg = update['message']
+                    chat_id = msg['chat']['id']
+                    text = msg.get('text', '')
+                    
+                    if text == '/start':
+                        send_message(chat_id, "🎬 أرسل رابط فيديو من إنستقرام")
+                    
+                    elif 'instagram.com' in text:
+                        send_message(chat_id, "⏳ جاري التحميل...")
+                        video_path = download_video(text)
+                        
+                        if video_path:
+                            caption = get_info(text)
+                            send_video(chat_id, video_path, caption)
+                            os.unlink(video_path)
+                        else:
+                            send_message(chat_id, "❌ فشل التحميل")
+        
+        except Exception as e:
+            print(f"Error: {e}")
+        
+        import time
+        time.sleep(1)
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
