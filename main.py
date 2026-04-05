@@ -13,7 +13,7 @@ load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("8382754822:AAFMJwBsW83k_tXXdhqb1hBx5sj390R_Sf0")
 
 async def get_instagram_info(url: str):
     """جلب معلومات الفيديو (الرابط + الإحصائيات) بدون حساب"""
