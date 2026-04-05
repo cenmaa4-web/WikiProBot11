@@ -1,158 +1,154 @@
 import os
-import re
 import tempfile
 import requests
 import yt_dlp
+from telegram import Update, InputFile
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import logging
 
+# التوكن الخاص بك
 BOT_TOKEN = "8382754822:AAFMJwBsW83k_tXXdhqb1hBx5sj390R_Sf0"
-BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-def send_message(chat_id, text):
-    """إرسال رسالة نصية"""
-    requests.post(f"{BASE_URL}/sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+# إعداد التسجيل للأخطاء
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def send_video(chat_id, video_path, caption):
-    """إرسال فيديو مع نص أسفله"""
-    with open(video_path, 'rb') as f:
-        requests.post(
-            f"{BASE_URL}/sendVideo", 
-            data={"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}, 
-            files={"video": f}
-        )
+# مسار ملف الكوكيز (ستقوم بإنشائه مرة واحدة)
+COOKIES_FILE = "cookies.txt"
 
-def send_action(chat_id, action):
-    """إظهار حالة الكتابة أو الرفع للمستخدم"""
-    requests.post(f"{BASE_URL}/sendChatAction", json={"chat_id": chat_id, "action": action})
-
-def download_video(url):
-    """تحميل الفيديو بسرعة"""
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    temp_path = temp_file.name
-    temp_file.close()
-    
-    ydl_opts = {
-        'outtmpl': temp_path[:-4],
-        'quiet': True,
-        'no_warnings': True,
-        'format': 'best[ext=mp4]/best',
-        'no_check_certificate': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            final_path = f"{temp_path[:-4]}.mp4"
-            if os.path.exists(final_path) and os.path.getsize(final_path) > 0:
-                return final_path
-        return None
-    except Exception as e:
-        print(f"خطأ في التحميل: {e}")
-        return None
-
-def get_video_info(url):
-    """جلب معلومات الفيديو (المشاهدات، الإعجابات، الناشر)"""
+def get_video_info_and_url(url: str):
+    """
+    جلب رابط التحميل المباشر ومعلومات الفيديو باستخدام yt-dlp
+    """
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
+        'extract_flat': False,
+        'force_generic_extractor': False,
     }
+    
+    # إذا كان ملف الكوكيز موجوداً، استخدمه
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts['cookiefile'] = COOKIES_FILE
+        logger.info("✅ جاري استخدام ملف الكوكيز للمصادقة")
+    else:
+        logger.warning("⚠️ ملف cookies.txt غير موجود. قد يفشل التحميل إذا كان الفيديو يتطلب تسجيل دخول.")
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            views = info.get('view_count', 0)
-            likes = info.get('like_count', 0)
-            comments = info.get('comment_count', 0)
-            uploader = info.get('uploader', 'غير معروف')
-            title = info.get('title', '')[:80]
+            # الحصول على أفضل رابط فيديو متاح
+            video_url = None
+            if 'url' in info:
+                video_url = info['url']
+            elif 'requested_formats' in info:
+                for f in info['requested_formats']:
+                    if f.get('vcodec') != 'none':
+                        video_url = f.get('url')
+                        break
             
-            # تنسيق جميل للإحصائيات
-            caption = (
-                f"📊 **إحصائيات الفيديو**\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"👁️ **المشاهدات:** {views:,}\n"
-                f"❤️ **الإعجابات:** {likes:,}\n"
-                f"💬 **التعليقات:** {comments:,}\n"
-                f"👤 **الناشر:** {uploader}\n"
-            )
-            
-            if title:
-                caption += f"📝 **الوصف:** {title}\n"
-            
-            caption += f"━━━━━━━━━━━━━━━━━━━━\n✨ شكراً لاستخدام البوت!"
-            
-            return caption
+            # جمع الإحصائيات
+            stats = {
+                'views': info.get('view_count', 0),
+                'likes': info.get('like_count', 0),
+                'comments': info.get('comment_count', 0),
+                'uploader': info.get('uploader', 'غير معروف'),
+                'title': info.get('title', '')[:80],
+            }
+            return video_url, stats
     except Exception as e:
-        print(f"خطأ في جلب المعلومات: {e}")
-        return "✅ **تم التحميل بنجاح!**\n(لم نتمكن من جلب الإحصائيات الكاملة)"
+        logger.error(f"خطأ في yt-dlp: {e}")
+        return None, None
+
+def download_video_direct(video_url: str):
+    """تحميل الفيديو من الرابط المباشر إلى ملف مؤقت"""
+    try:
+        resp = requests.get(video_url, stream=True, timeout=30)
+        if resp.status_code == 200:
+            temp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            for chunk in resp.iter_content(8192):
+                temp.write(chunk)
+            temp.close()
+            return temp.name
+    except Exception as e:
+        logger.error(f"خطأ في تحميل الفيديو: {e}")
+    return None
+
+def format_stats(stats):
+    if not stats or stats.get('views') == 0:
+        return "✅ تم التحميل بنجاح!"
+    msg = (
+        f"📊 **إحصائيات الفيديو**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👁️ **المشاهدات:** {stats['views']:,}\n"
+        f"❤️ **الإعجابات:** {stats['likes']:,}\n"
+        f"💬 **التعليقات:** {stats['comments']:,}\n"
+        f"👤 **الناشر:** {stats['uploader']}\n"
+    )
+    if stats['title']:
+        msg += f"📝 **الوصف:** {stats['title']}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n✨ شكراً!"
+    return msg
+
+async def start(update: Update, context):
+    await update.message.reply_text(
+        "🎬 **بوت تحميل إنستقرام**\n\n"
+        "أرسل رابط فيديو من إنستقرام وسأرسله لك مع الإحصائيات.\n\n"
+        "⚠️ **ملاحظة:** إذا فشل التحميل، فأنت بحاجة لملف `cookies.txt`.\n"
+        "لإنشائه: استخدم إضافة متصفح مثل 'Get cookies.txt' ثم ضع الملف في نفس مجلد البوت."
+    )
+
+async def handle_link(update: Update, context):
+    url = update.message.text.strip()
+    msg = await update.message.reply_text("⏳ جاري تجهيز الفيديو...")
+    
+    try:
+        # جلب رابط الفيديو المباشر والإحصائيات
+        video_url, stats = get_video_info_and_url(url)
+        if not video_url:
+            await msg.edit_text(
+                "❌ **فشل التحميل**\n\n"
+                "الأسباب المحتملة:\n"
+                "• الفيديو يتطلب تسجيل دخول (حساب خاص أو مقيد)\n"
+                "• إنستقرام غير متاح حالياً\n\n"
+                "🔧 **الحل:** ضع ملف `cookies.txt` في مجلد البوت.\n"
+                "طريقة الحصول عليه: اشرح في متصفحك إضافة 'Get cookies.txt'، سجل الدخول إلى إنستقرام، ثم صدّر الكوكيز."
+            )
+            return
+        
+        # تحميل الفيديو من الرابط المباشر
+        video_path = download_video_direct(video_url)
+        if not video_path:
+            await msg.edit_text("❌ فشل في تحميل الفيديو إلى الخادم.")
+            return
+        
+        # إرسال الفيديو مع الإحصائيات
+        caption = format_stats(stats)
+        with open(video_path, 'rb') as f:
+            await update.message.reply_video(
+                video=InputFile(f, filename="instagram.mp4"),
+                caption=caption,
+                parse_mode='Markdown'
+            )
+        
+        await msg.delete()
+        os.unlink(video_path)
+        
+    except Exception as e:
+        logger.error(e)
+        await msg.edit_text(f"⚠️ خطأ غير متوقع: {str(e)[:100]}")
 
 def main():
-    print("✅ البوت يعمل الآن...")
-    print("👉 أرسل أي رابط فيديو من إنستقرام وسيرفعه فوراً")
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'instagram\.com'), handle_link))
     
-    last_update_id = 0
-    
-    while True:
-        try:
-            # جلب الرسائل الجديدة
-            url = f"{BASE_URL}/getUpdates"
-            params = {"timeout": 30, "offset": last_update_id + 1 if last_update_id else None}
-            response = requests.get(url, params=params)
-            updates = response.json().get("result", [])
-            
-            for update in updates:
-                last_update_id = update['update_id']
-                
-                if 'message' in update:
-                    msg = update['message']
-                    chat_id = msg['chat']['id']
-                    text = msg.get('text', '')
-                    
-                    # أمر /start
-                    if text == '/start':
-                        send_message(
-                            chat_id, 
-                            "🎬 **بوت تحميل إنستقرام**\n\n"
-                            "أرسل لي رابط فيديو وسأرسله لك فوراً مع الإحصائيات!\n\n"
-                            "✅ **روابط مقبولة:**\n"
-                            "• `https://www.instagram.com/reel/...`\n"
-                            "• `https://www.instagram.com/p/...`\n"
-                            "• `https://www.instagram.com/tv/...`"
-                        )
-                    
-                    # رابط إنستقرام
-                    elif 'instagram.com' in text and ('/reel/' in text or '/p/' in text or '/tv/' in text):
-                        
-                        # إظهار حالة الرفع للمستخدم
-                        send_action(chat_id, "upload_video")
-                        
-                        # تحميل الفيديو
-                        video_path = download_video(text)
-                        
-                        if video_path:
-                            # جلب الإحصائيات
-                            caption = get_video_info(text)
-                            
-                            # رفع الفيديو فوراً مع الإحصائيات أسفله
-                            send_video(chat_id, video_path, caption)
-                            
-                            # حذف الملف المؤقت
-                            os.unlink(video_path)
-                        else:
-                            send_message(chat_id, "❌ **فشل التحميل**\n\nتأكد من:\n• صحة الرابط\n• الفيديو لا يزال متاحاً")
-                    
-                    # أي رسالة أخرى
-                    elif text and not text.startswith('/'):
-                        send_message(
-                            chat_id, 
-                            "📎 **أرسل رابط فيديو من إنستقرام فقط**\n\n"
-                            "مثال: `https://www.instagram.com/reel/xxxxx/`"
-                        )
-        
-        except Exception as e:
-            print(f"خطأ: {e}")
-        
-        import time
-        time.sleep(1)
+    print("✅ البوت يعمل...")
+    if not os.path.exists(COOKIES_FILE):
+        print("⚠️ ملاحظة: ملف cookies.txt غير موجود. قد لا تعمل الروابط التي تتطلب تسجيل دخول.")
+        print("   لإنشاء الملف: ثبت إضافة 'Get cookies.txt' في متصفحك، اسجل دخولك إلى إنستقرام، ثم صدّر الكوكيز.")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
