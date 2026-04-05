@@ -2,7 +2,7 @@
   "name": "telegram-media-bot",
   "version": "1.0.0",
   "description": "Telegram bot for downloading media from social platforms",
-  "main": "src/index.js",
+  "main": "src/index.js",  // ✅ هذا صحيح
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/index.js"
