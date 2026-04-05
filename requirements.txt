@@ -1,0 +1,3 @@
+python-telegram-bot==20.8
+yt-dlp==2024.12.23
+requests==2.31.0
